@@ -67,3 +67,10 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+__pycache__/
+*.log
+*.tmp
+private_key_lockers.json
+node_modules/
+Thumbs.db
