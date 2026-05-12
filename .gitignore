@@ -74,3 +74,12 @@ __pycache__/
 private_key_lockers.json
 node_modules/
 Thumbs.db
+
+# Chặn các file ảnh dữ liệu
+*.png
+
+# Chặn file database khuôn mặt
+*.pkl
+
+# Chặn các file nén
+*.zip
