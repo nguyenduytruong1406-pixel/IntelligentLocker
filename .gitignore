@@ -92,3 +92,6 @@ Thumbs.db
 *.key
 *.enc
 *.bak
+
+file test database/
+file test faceid/
