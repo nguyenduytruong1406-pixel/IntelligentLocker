@@ -75,8 +75,13 @@ private_key_lockers.json
 node_modules/
 Thumbs.db
 
-# Chặn các file ảnh dữ liệu
+# Chặn các file ảnh
 *.png
+*.jpg
+*.jpeg
+
+# NGOẠI TRỪ file logo này thì được phép giữ lại
+!logo_web.jpg
 
 # Chặn file database khuôn mặt
 *.pkl

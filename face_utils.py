@@ -1,35 +1,39 @@
 """
-face_utils.py — Module dùng chung: MTCNN detection + dlib embedding
-Thay thế dlib HOG detector bằng MTCNN (chính xác hơn với mặt nghiêng, ánh sáng yếu)
-
-Cài đặt (1 lần):
-    pip install facenet-pytorch
+face_utils.py — Module dùng chung (ĐÃ TỐI ƯU HÓA TẦNG DETECTION)
+- Detection: Dùng Google MediaPipe (Siêu nhanh trên CPU, nhạy với mặt nghiêng)
+- Embedding: Dlib ResNet 128-D (Giữ nguyên để tương thích Database)
 """
 
 import numpy as np
 import cv2
 import dlib
-from PIL import Image
+import mediapipe as mp
 
-# ── MTCNN detector (facenet-pytorch, không cần TensorFlow) ────────────────────
-try:
-    from facenet_pytorch import MTCNN as _MTCNN
-    _mtcnn = _MTCNN(
-        keep_all       = True,    # Phát hiện tất cả khuôn mặt
-        min_face_size  = 40,      # Bỏ qua mặt quá nhỏ
-        thresholds     = [0.6, 0.7, 0.7],   # P-Net, R-Net, O-Net
-        post_process   = False,
-        device         = "cpu",
+# ══════════════════════════════════════════════════════════════════════════════
+#  1. KHỞI TẠO CÁC MÔ HÌNH (MODELS)
+# ══════════════════════════════════════════════════════════════════════════════
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
+import urllib.request, os
+
+# Tự tải model nếu chưa có
+_MODEL_PATH = "blaze_face_short_range.tflite"
+if not os.path.exists(_MODEL_PATH):
+    print("[face_utils] Đang tải BlazeFace model...")
+    urllib.request.urlretrieve(
+        "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+        _MODEL_PATH
     )
-    MTCNN_AVAILABLE = True
-except ImportError:
-    MTCNN_AVAILABLE = False
-    print("[face_utils] ⚠️  facenet-pytorch chưa cài → dùng dlib HOG fallback")
-    print("             Cài: pip install facenet-pytorch")
+    print("[face_utils] Tải xong!")
 
-# ── dlib fallback + embedding ──────────────────────────────────────────────────
-_hog_detector = dlib.get_frontal_face_detector()
+_base_opts   = mp_python.BaseOptions(model_asset_path=_MODEL_PATH)
+_det_opts    = mp_vision.FaceDetectorOptions(
+    base_options=_base_opts,
+    min_detection_confidence=0.7
+)
+_mp_detector = mp_vision.FaceDetector.create_from_options(_det_opts)
 
+# --- Khởi tạo Dlib cho Embedding (Giữ nguyên đường dẫn của bạn) ---
 _SHAPE_MODEL = (
     r"C:\Users\ASUS\AppData\Local\Programs\Python\Python311\Lib\site-packages"
     r"\face_recognition_models\models\shape_predictor_68_face_landmarks.dat"
@@ -39,63 +43,39 @@ _RECOG_MODEL = (
     r"\face_recognition_models\models\dlib_face_recognition_resnet_model_v1.dat"
 )
 
-_shape_pred  = dlib.shape_predictor(_SHAPE_MODEL)
-_face_encoder = dlib.face_recognition_model_v1(_RECOG_MODEL)
+try:
+    _shape_pred   = dlib.shape_predictor(_SHAPE_MODEL)
+    _face_encoder = dlib.face_recognition_model_v1(_RECOG_MODEL)
+except Exception as e:
+    print(f"[ERR] Không thể nạp mô hình Dlib: {e}")
 
+# Biến cờ (flag) để các file khác không bị báo lỗi thiếu biến
+MTCNN_AVAILABLE = False 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  DETECTION
+#  2. TẦNG DETECTION (TỐI ƯU BẰNG MEDIAPIPE)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def detect_faces_bgr(bgr_img: np.ndarray) -> list[tuple[int,int,int,int]]:
-    """
-    Phát hiện khuôn mặt từ ảnh BGR.
-    Trả về list [(left, top, right, bottom), ...] đã sort theo diện tích giảm dần.
-    Dùng MTCNN nếu có, fallback sang dlib HOG.
-    """
-    rgb = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+    rgb_img = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_img)
+    result   = _mp_detector.detect(mp_image)
 
-    if MTCNN_AVAILABLE:
-        return _detect_mtcnn(rgb)
-    return _detect_hog(rgb)
-
-
-def _detect_mtcnn(rgb_img: np.ndarray) -> list[tuple[int,int,int,int]]:
-    pil_img = Image.fromarray(rgb_img)
-    boxes, probs = _mtcnn.detect(pil_img)
-
-    if boxes is None:
-        return []
-
-    h, w = rgb_img.shape[:2]
-    results = []
-    for box, prob in zip(boxes, probs):
-        if prob is None or prob < 0.85:
-            continue
-        l = max(0,  int(box[0]))
-        t = max(0,  int(box[1]))
-        r = min(w,  int(box[2]))
-        b = min(h,  int(box[3]))
+    faces = []
+    h, w  = bgr_img.shape[:2]
+    for det in result.detections:
+        bbox = det.bounding_box
+        l = max(0,  bbox.origin_x)
+        t = max(0,  bbox.origin_y)
+        r = min(w,  bbox.origin_x + bbox.width)
+        b = min(h,  bbox.origin_y + bbox.height)
         if r > l and b > t:
-            results.append((l, t, r, b))
+            faces.append((l, t, r, b))
 
-    # Sort: mặt lớn nhất trước
-    results.sort(key=lambda x: (x[2]-x[0])*(x[3]-x[1]), reverse=True)
-    return results
-
-
-def _detect_hog(rgb_img: np.ndarray) -> list[tuple[int,int,int,int]]:
-    dets = _hog_detector(rgb_img, 1)
-    results = [(d.left(), d.top(), d.right(), d.bottom()) for d in dets]
-    results.sort(key=lambda x: (x[2]-x[0])*(x[3]-x[1]), reverse=True)
-    return results
-
-
+    faces.sort(key=lambda x: (x[2]-x[0])*(x[3]-x[1]), reverse=True)
+    return faces
 def center_face(bgr_img: np.ndarray) -> tuple[int,int,int,int] | None:
-    """
-    Trả về bounding box mặt gần tâm ảnh nhất (cho verify 1:1).
-    None nếu không phát hiện được.
-    """
+    """Trả về bounding box mặt gần tâm ảnh nhất"""
     faces = detect_faces_bgr(bgr_img)
     if not faces:
         return None
@@ -109,7 +89,12 @@ def center_face(bgr_img: np.ndarray) -> tuple[int,int,int,int] | None:
 
     return min(faces, key=dist_to_center)
 
-
+# ==============================================================================
+# HÃY GIỮ NGUYÊN CÁC HÀM BÊN DƯỚI TRONG FILE CỦA BẠN:
+# - embedding_from_box
+# - extract_embedding
+# - match_face
+# ==============================================================================
 # ══════════════════════════════════════════════════════════════════════════════
 #  EMBEDDING
 # ══════════════════════════════════════════════════════════════════════════════

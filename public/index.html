@@ -74,27 +74,52 @@
         .btn-approve { background-color: #28a745; }
         .btn-lock { background-color: #dc3545; }
 
-        /* TAB 2: Chỉnh Lưới Tủ Khóa */
-        .locker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 20px; margin-top: 20px; }
+        /* TAB 2: Chỉnh Lưới Tủ Khóa (Custom Layout) */
+        .locker-grid { 
+            display: grid; 
+            grid-template-columns: repeat(6, 1fr); /* Chia thành 6 cột tàng hình */
+            gap: 20px; 
+            margin-top: 20px; 
+            max-width: 800px; /* Giới hạn chiều rộng để giống bản vẽ */
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
         .locker-box { 
-            background: #e6ffec; border: 2px solid #28a745; border-radius: 10px; padding: 25px 10px; 
-            text-align: center; font-size: 1.2rem; font-weight: bold; cursor: pointer; transition: 0.2s;
+            background: #e6ffec; border: 2px solid #28a745; border-radius: 10px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 1.2rem; font-weight: bold; cursor: pointer; transition: 0.2s;
         }
         .locker-box:hover { transform: scale(1.05); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .locker-box small { display: block; font-size: 0.85rem; margin-top: 5px; font-weight: normal; }
+        .locker-box small { font-size: 0.85rem; margin-top: 5px; font-weight: normal; }
         .locker-box.occupied { background: #ffe6e6; border-color: #dc3545; color: #721c24; }
 
-        /* GIAO DIỆN POPUP (MODAL) XEM CHI TIẾT TỦ */
+        /* Phân loại kích thước ô (ĐÃ SỬA TỶ LỆ) */
+        .box-small { grid-column: span 2; height: 110px; } /* Ô tủ nhỏ lùn lại */
+        .box-large { grid-column: span 3; height: 160px; } /* Ô tủ lớn cao và rộng hơn */
+
+        /* Ô Điều Khiển Nổi Bật */
+        .control-box {
+            grid-column: span 2; height: 110px; /* Chiều cao bằng hệt ô tủ nhỏ */
+            background: linear-gradient(135deg, #1e3c72, #2a5298); 
+            color: white; border: 2px solid #fff; border-radius: 10px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 1.1rem; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            text-align: center; cursor: pointer; transition: 0.2s;
+        }
+        .control-box:hover { transform: scale(1.05); }
+        .control-box span { font-size: 2.2rem; margin-bottom: 5px; }
+
+        /* ========================================= */
+        /* PHẦN 4: DARK MODE & CHUẨN ĐIỆN THOẠI      */
+        /* ========================================= */
+        /* GIAO DIỆN POPUP (MODAL) XEM CHI TIẾT TỦ - BẮT BUỘC PHẢI CÓ */
         .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
         .modal-content { background-color: #fff; padding: 30px; border-radius: 12px; width: 350px; position: relative; box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: fadeIn 0.2s; }
         .close-btn { position: absolute; top: 15px; right: 20px; font-size: 1.5rem; cursor: pointer; color: #888; }
         .close-btn:hover { color: #333; }
         .modal-detail-row { margin: 10px 0; font-size: 1.1rem; border-bottom: 1px dashed #eee; padding-bottom: 5px;}
         .modal-detail-row strong { color: #555; display: inline-block; width: 100px; }
-
-        /* ========================================= */
-        /* PHẦN 4: DARK MODE & CHUẨN ĐIỆN THOẠI      */
-        /* ========================================= */
         @media (prefers-color-scheme: dark) {
             body { background-color: #18191A; color: #E4E6EB; }
             .sidebar, .modal-content { background-color: #242526; border-color: #3E4042; }
@@ -288,30 +313,57 @@
 
         // --- ĐỌC DỮ LIỆU TỦ KHÓA (Real-time Grid) ---
         window.lockerDataGlobal = {}; 
+        // --- ĐỌC DỮ LIỆU TỦ KHÓA (Layout Custom 9 Tủ + 1 Điều Khiển) ---
+        // Bản đồ vị trí các tủ dựa trên bản vẽ của bạn
+        const gridLayout = [
+            { id: 1, type: 'small' }, { id: 2, type: 'small' }, { id: 3, type: 'small' }, // Hàng 1
+            { id: 4, type: 'small' }, { type: 'control' },      { id: 5, type: 'small' }, // Hàng 2 (Ô giữa là điều khiển)
+            { id: 6, type: 'large' }, { id: 7, type: 'large' },                           // Hàng 3
+            { id: 8, type: 'large' }, { id: 9, type: 'large' }                            // Hàng 4
+        ];
+
+        window.lockerDataGlobal = {}; 
         onValue(ref(db, 'lockers'), (snapshot) => {
             const lockerGrid = document.getElementById('locker-grid');
             lockerGrid.innerHTML = "";
             const data = snapshot.val() || {};
             
-            for(let i = 1; i <= 15; i++) {
-                const formattedNumber = String(i).padStart(2, '0'); // Định dạng L01, L02...
-                const firebaseKey = `L${formattedNumber}`; 
-                const lockerInfo = data[firebaseKey] || {};
-                
-                const status = lockerInfo.status || 'empty'; 
-                const mssv = lockerInfo.current_mssv || 'Trống'; // Lấy biến current_mssv
-                const time = lockerInfo.time || 'Trống';
-                const isOccupied = status === 'occupied';
+            gridLayout.forEach(item => {
+                if (item.type === 'control') {
+                    // Vẽ ô Điều khiển
+                    lockerGrid.innerHTML += `
+                        <div class="control-box">
+                            <span>🎛️</span>
+                            Main<br>Controller
+                        </div>
+                    `;
+                } else {
+                    // Vẽ ô Tủ bình thường
+                    const i = item.id;
+                    const formattedNumber = String(i).padStart(2, '0');
+                    const firebaseKey = `L${formattedNumber}`; 
+                    const lockerInfo = data[firebaseKey] || {};
+                    
+                    const status = lockerInfo.status || 'empty'; 
+                    const mssv = lockerInfo.current_mssv || 'Trống'; 
+                    const time = lockerInfo.time || 'Trống';
+                    const isOccupied = status === 'occupied';
 
-                // Lưu dữ liệu để lát bấm vào hiện Popup
-                window.lockerDataGlobal[i] = { status: isOccupied ? 'Đang sử dụng' : 'Đang trống', mssv: mssv, time: time, color: isOccupied ? '#dc3545' : '#28a745' };
-                
-                lockerGrid.innerHTML += `
-                    <div class="locker-box ${isOccupied ? 'occupied' : ''}" onclick="window.openLockerModal(${i})">
-                        Tủ ${formattedNumber} <small>${isOccupied ? '🔴 Đang dùng' : '🟢 Trống'}</small>
-                    </div>
-                `;
-            }
+                    window.lockerDataGlobal[i] = { 
+                        status: isOccupied ? 'Đang sử dụng' : 'Đang trống', 
+                        mssv: mssv, time: time, color: isOccupied ? '#dc3545' : '#28a745' 
+                    };
+                    
+                    const boxClass = item.type === 'small' ? 'box-small' : 'box-large';
+
+                    lockerGrid.innerHTML += `
+                        <div class="locker-box ${boxClass} ${isOccupied ? 'occupied' : ''}" onclick="window.openLockerModal(${i})">
+                            Tủ ${formattedNumber} 
+                            <small>${isOccupied ? '🔴 Đang dùng' : '🟢 Trống'}</small>
+                        </div>
+                    `;
+                }
+            });
         });
 
         // Hàm điền thông tin vào Popup
