@@ -88,3 +88,8 @@ Thumbs.db
 
 # Chặn các file nén
 *.zip
+
+*.key
+*.enc
+*.db
+*.bak
