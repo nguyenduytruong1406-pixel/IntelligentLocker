@@ -1,10 +1,10 @@
 """
 locker_db.py — Tích hợp face recognition vào IntelligentLocker.db
-Thay thế secure_db.py — dùng chung 1 file SQLite duy nhất
-
-Schema bổ sung:
-  Users       += face_embedding BLOB  (numpy array pickle'd)
-  AccessLog    (bảng mới) — audit log nhận dạng
+Schema mới (sau migrate_db.py):
+  Users      : mssv PK, name, role, is_approved, has_face, face_embedding BLOB
+  Lockers    : locker_id TEXT PK ("L01"...), size, status, current_mssv
+  LockerLog  : id, timestamp, event, locker_id, mssv, name  ← sync Firebase
+  FaceLog    : id, timestamp, event, mssv, name, face_dist, live_result, notes ← local only
 """
 
 import sqlite3
@@ -13,12 +13,27 @@ import datetime
 import numpy as np
 from pathlib import Path
 from contextlib import contextmanager
+import firebase_admin
+from firebase_admin import credentials, db
 
-DB_PATH = "IntelligentLocker.db"   # ← chỉnh đường dẫn nếu cần
+# --- KHỞI TẠO FIREBASE ---
+try:
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(r'D:/DATN/Software/test_db_ver1/private_key_lockers.json')
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': 'https://lockerxmakerspacexhcmute-default-rtdb.asia-southeast1.firebasedatabase.app'
+        })
+except Exception as e:
+    print(f"[Cảnh báo] Lỗi khởi tạo Firebase trong locker_db: {e}")
 
-# ── Rate limiting ─────────────────────────────────────────────────────────────
+DB_PATH = "IntelligentLocker.db"
+
+# ── Rate limiting ──────────────────────────────────────────────────────────────
 MAX_FAILS    = 5
 LOCKOUT_SECS = 60
+
+# Các event thuộc LockerLog (sync Firebase), còn lại vào FaceLog (local)
+LOCKER_EVENTS = {'OPEN_LOCKER', 'ASSIGN_LOCKER', 'RELEASE_LOCKER'}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -38,30 +53,53 @@ def _conn():
 
 def migrate():
     """
-    Thêm các cột/bảng còn thiếu vào DB hiện có — an toàn, idempotent.
-    Gọi 1 lần khi khởi động app.
+    Thêm các cột/bảng còn thiếu — an toàn, idempotent.
+    Gọi 1 lần khi khởi động app (sau khi đã chạy migrate_db.py).
     """
     with _conn() as con:
-        # Thêm cột face_embedding vào Users nếu chưa có
+        existing_tables = {r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+
+        # Thêm has_face vào Users nếu chưa có
         cols = [r[1] for r in con.execute("PRAGMA table_info(Users)").fetchall()]
+        if "has_face" not in cols:
+            con.execute("ALTER TABLE Users ADD COLUMN has_face INTEGER DEFAULT 0")
+            print("[locker_db] ✓ Thêm cột has_face vào Users")
         if "face_embedding" not in cols:
             con.execute("ALTER TABLE Users ADD COLUMN face_embedding BLOB")
             print("[locker_db] ✓ Thêm cột face_embedding vào Users")
 
-        # Tạo bảng AccessLog nếu chưa có
-        con.execute("""
-            CREATE TABLE IF NOT EXISTS AccessLog (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp   TEXT    NOT NULL,
-                event       TEXT    NOT NULL,
-                mssv        TEXT,
-                name        TEXT,
-                locker_id   INTEGER,
-                face_dist   REAL,
-                live_result TEXT,
-                notes       TEXT
-            )
-        """)
+        # LockerLog: log tủ, đồng bộ Firebase
+        if "LockerLog" not in existing_tables:
+            con.execute("""
+                CREATE TABLE LockerLog (
+                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    event     TEXT NOT NULL,
+                    locker_id TEXT,
+                    mssv      TEXT,
+                    name      TEXT
+                )
+            """)
+            print("[locker_db] ✓ Tạo bảng LockerLog")
+
+        # FaceLog: log khuôn mặt, chỉ local
+        if "FaceLog" not in existing_tables:
+            con.execute("""
+                CREATE TABLE FaceLog (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp   TEXT NOT NULL,
+                    event       TEXT NOT NULL,
+                    mssv        TEXT,
+                    name        TEXT,
+                    face_dist   REAL,
+                    live_result TEXT,
+                    notes       TEXT
+                )
+            """)
+            print("[locker_db] ✓ Tạo bảng FaceLog")
+
     print(f"[locker_db] ✓ DB ready: {DB_PATH}")
 
 
@@ -70,24 +108,30 @@ def migrate():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def save_embedding(mssv: str, embedding: np.ndarray) -> bool:
-    """Lưu face embedding cho user có mssv. Trả về False nếu mssv không tồn tại."""
+    """Lưu face embedding và CHỈ bật cờ has_face cho user trên Web."""
     blob = pickle.dumps(embedding)
     with _conn() as con:
         cur = con.execute(
-            "UPDATE Users SET face_embedding=? WHERE mssv=?", (blob, mssv)
+            "UPDATE Users SET face_embedding=?, has_face=1 WHERE mssv=?",
+            (blob, mssv)
         )
         if cur.rowcount == 0:
             print(f"[locker_db] ✗ Không tìm thấy mssv='{mssv}' trong DB")
             return False
     print(f"[locker_db] ✓ Lưu embedding cho mssv='{mssv}'")
+
+    # Báo Firebase: Chỉ gạt công tắc "Đã có khuôn mặt", KHÔNG ĐẨY LOG nữa
+    try:
+        db.reference(f'users/{mssv}').update({'has_face': True})
+        print(f"[Firebase] 🟢 Bật thông báo 'Có khuôn mặt' cho {mssv} trên Web.")
+    except Exception as e:
+        print(f"[Firebase Lỗi] {e}")
+
+    # Ghi FaceLog local (Chỉ lưu ở máy Mini PC)
+    log_access('FACE_REGISTER', mssv=mssv)
     return True
-
-
 def load_all_embeddings() -> dict[str, tuple[np.ndarray, str]]:
-    """
-    Tải toàn bộ face embedding.
-    Trả về {mssv: (embedding, name)} — chỉ user đã được approved và có embedding.
-    """
+    """Tải toàn bộ face embedding. Trả về {mssv: (embedding, name)}."""
     result = {}
     with _conn() as con:
         rows = con.execute(
@@ -104,10 +148,10 @@ def load_all_embeddings() -> dict[str, tuple[np.ndarray, str]]:
 
 
 def get_user(mssv: str) -> dict | None:
-    """Lấy thông tin user theo mssv."""
+    """Lấy thông tin user theo mssv (không có rfid)."""
     with _conn() as con:
         row = con.execute(
-            "SELECT id, name, mssv, rfid, role, is_approved "
+            "SELECT mssv, name, role, is_approved, has_face "
             "FROM Users WHERE mssv=?", (mssv,)
         ).fetchone()
     return dict(row) if row else None
@@ -117,9 +161,8 @@ def list_users() -> list[dict]:
     """Liệt kê tất cả user."""
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, name, mssv, role, is_approved, "
-            "CASE WHEN face_embedding IS NOT NULL THEN 1 ELSE 0 END as has_face "
-            "FROM Users ORDER BY id"
+            "SELECT mssv, name, role, is_approved, has_face "
+            "FROM Users ORDER BY name"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -139,131 +182,215 @@ def get_user_locker(mssv: str) -> dict | None:
 
 
 def open_locker(mssv: str) -> tuple[bool, str]:
-    """
-    Xử lý sau khi xác thực thành công:
-      - Nếu user đang giữ tủ → trả về thông tin tủ đó (mở tủ)
-      - Nếu chưa có tủ       → gán tủ trống (status='Empty') phù hợp
-    Trả về (success, message).
-    """
-    # Kiểm tra tủ hiện tại
+    """Xử lý sau khi xác thực thành công (Đã sửa lỗi phân biệt hoa/thường)."""
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user = get_user(mssv)
+    name = user["name"] if user else "Unknown"
+
+    # TRƯỜNG HỢP 1: Sinh viên đã có tủ
     locker = get_user_locker(mssv)
     if locker:
-        log_access("OPEN_LOCKER", mssv=mssv,
-                   locker_id=locker["locker_id"],
-                   notes="Mở tủ đang dùng")
-        return True, f"Mở tủ #{locker['locker_id']} (đang dùng)"
+        lid = locker["locker_id"]   # dạng "L01"
+        log_access("OPEN_LOCKER", mssv=mssv, name=name, locker_id=lid)
 
-    # Chưa có tủ → gán tủ trống
+        try:
+            db.reference(f'lockers/{lid}').update({
+                'current_mssv'  : mssv,
+                'status'        : 'occupied',
+                'last_open_time': now_str
+            })
+            db.reference('logs').push({
+                'time'     : now_str,
+                'event'    : 'OPEN_LOCKER',
+                'mssv'     : mssv,
+                'name'     : name,
+                'locker_id': lid
+            })
+            print(f"[Firebase] 🔓 Báo cáo MỞ TỦ {lid} lên Web.")
+        except Exception as e:
+            print(f"[Firebase Lỗi] {e}")
+
+        return True, f"Mở tủ {lid} (đang dùng)"
+
+    # TRƯỜNG HỢP 2: Chưa có tủ → Gán tủ trống mới
     with _conn() as con:
+        # SỬA LỖI Ở ĐÂY: Dùng LOWER(status) để bắt được cả 'Empty' cũ và 'empty' mới
         row = con.execute(
             "SELECT locker_id FROM Lockers "
-            "WHERE status='Empty' AND current_mssv IS NULL "
+            "WHERE LOWER(status)='empty' AND current_mssv IS NULL "
             "ORDER BY locker_id LIMIT 1"
         ).fetchone()
 
         if not row:
             return False, "Không còn tủ trống!"
 
-        lid = row["locker_id"]
+        lid = row["locker_id"]   # dạng "L01"
+        # Thống nhất ghi vào DB chữ 'occupied' thường cho đồng bộ với Firebase
         con.execute(
-            "UPDATE Lockers SET status='Occupied', current_mssv=? "
+            "UPDATE Lockers SET status='occupied', current_mssv=? "
             "WHERE locker_id=?", (mssv, lid)
         )
 
-    log_access("ASSIGN_LOCKER", mssv=mssv, locker_id=lid,
-               notes="Gán tủ mới")
-    return True, f"Gán tủ mới #{lid}"
+    log_access("ASSIGN_LOCKER", mssv=mssv, name=name, locker_id=lid)
+
+    try:
+        db.reference(f'lockers/{lid}').update({
+            'current_mssv'  : mssv,
+            'status'        : 'occupied',
+            'last_open_time': now_str
+        })
+        db.reference('logs').push({
+            'time'     : now_str,
+            'event'    : 'ASSIGN_LOCKER',
+            'mssv'     : mssv,
+            'name'     : name,
+            'locker_id': lid
+        })
+        print(f"[Firebase] 🆕 Báo cáo GÁN TỦ MỚI {lid} lên Web.")
+    except Exception as e:
+        print(f"[Firebase Lỗi] {e}")
+
+    return True, f"Gán tủ mới {lid}"
 
 
 def release_locker(mssv: str) -> tuple[bool, str]:
-    """Trả tủ (khi user lấy đồ ra). Thường gọi từ UI admin."""
+    """Trả tủ. Thường gọi từ UI admin."""
     locker = get_user_locker(mssv)
     if not locker:
         return False, f"mssv='{mssv}' không đang giữ tủ nào"
 
+    lid = locker["locker_id"]
+    user = get_user(mssv)
+    name = user["name"] if user else "Unknown"
+
     with _conn() as con:
         con.execute(
-            "UPDATE Lockers SET status='Empty', current_mssv=NULL "
-            "WHERE locker_id=?", (locker["locker_id"],)
+            "UPDATE Lockers SET status='empty', current_mssv=NULL "
+            "WHERE locker_id=?", (lid,)
         )
-    log_access("RELEASE_LOCKER", mssv=mssv, locker_id=locker["locker_id"])
-    return True, f"Đã trả tủ #{locker['locker_id']}"
+
+    log_access("RELEASE_LOCKER", mssv=mssv, name=name, locker_id=lid)
+
+    try:
+        db.reference(f'lockers/{lid}').update({
+            'current_mssv': '',
+            'status'      : 'empty'
+        })
+        db.reference('logs').push({
+            'time'     : datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'event'    : 'RELEASE_LOCKER',
+            'mssv'     : mssv,
+            'name'     : name,
+            'locker_id': lid
+        })
+        print(f"[Firebase] 🔒 Báo cáo TRẢ TỦ {lid} lên Web.")
+    except Exception as e:
+        print(f"[Firebase Lỗi] {e}")
+
+    return True, f"Đã trả tủ {lid}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  AUDIT LOG
+#  AUDIT LOG — ghi vào LockerLog hoặc FaceLog tùy loại event
 # ══════════════════════════════════════════════════════════════════════════════
 
 def log_access(event: str,
-               mssv:      str   = None,
-               name:      str   = None,
-               locker_id: int   = None,
-               face_dist: float = None,
-               live_result: str = None,
-               notes:     str   = None) -> None:
+               mssv:        str   = None,
+               name:        str   = None,
+               locker_id:   str   = None,
+               face_dist:   float = None,
+               live_result: str   = None,
+               notes:       str   = None) -> None:
     ts = datetime.datetime.now().isoformat(timespec="seconds")
 
-    # Tự điền name nếu có mssv
     if name is None and mssv:
         user = get_user(mssv)
-        if user: name = user["name"]
+        if user:
+            name = user["name"]
 
-    with _conn() as con:
-        con.execute(
-            "INSERT INTO AccessLog "
-            "(timestamp, event, mssv, name, locker_id, face_dist, live_result, notes) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (ts, event, mssv, name, locker_id, face_dist, live_result, notes)
-        )
+    if event in LOCKER_EVENTS:
+        # → LockerLog (đồng bộ Firebase)
+        with _conn() as con:
+            con.execute(
+                "INSERT INTO LockerLog (timestamp, event, locker_id, mssv, name) "
+                "VALUES (?,?,?,?,?)",
+                (ts, event, locker_id, mssv, name)
+            )
+    else:
+        # → FaceLog (chỉ local: FACE_REGISTER, FACE_VERIFY, FACE_FAIL, ...)
+        with _conn() as con:
+            con.execute(
+                "INSERT INTO FaceLog "
+                "(timestamp, event, mssv, name, face_dist, live_result, notes) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (ts, event, mssv, name, face_dist, live_result, notes)
+            )
 
 
 def print_log(n: int = 20) -> None:
+    """In log hợp nhất từ LockerLog + FaceLog, sắp xếp mới nhất lên trên."""
     with _conn() as con:
-        rows = con.execute(
-            "SELECT timestamp, event, mssv, name, locker_id, face_dist, live_result, notes "
-            "FROM AccessLog ORDER BY id DESC LIMIT ?", (n,)
-        ).fetchall()
+        rows = con.execute("""
+            SELECT timestamp, event, mssv, name,
+                   locker_id, NULL as face_dist, NULL as live_result, NULL as notes
+            FROM LockerLog
+            UNION ALL
+            SELECT timestamp, event, mssv, name,
+                   NULL as locker_id, face_dist, live_result, notes
+            FROM FaceLog
+            ORDER BY timestamp DESC LIMIT ?
+        """, (n,)).fetchall()
 
     if not rows:
         print("(Chưa có log nào)")
         return
 
-    print(f"\n{'─'*82}")
-    print(f"{'THỜI GIAN':<21} {'SỰ KIỆN':<16} {'MSSV':<12} {'TÊN':<18} "
-          f"{'TỦ':<4} {'DIST':<7} GHI CHÚ")
-    print(f"{'─'*82}")
+    print(f"\n{'─'*90}")
+    print(f"{'THỜI GIAN':<21} {'SỰ KIỆN':<18} {'MSSV':<12} {'TÊN':<18} {'TỦ':<6} GHI CHÚ")
+    print(f"{'─'*90}")
 
-    icons = {"VERIFY_PASS": "✅", "VERIFY_FAIL": "❌", "VERIFY_ABORT": "⚠️",
-             "ENROLL": "📝", "OPEN_LOCKER": "🔓", "ASSIGN_LOCKER": "🆕",
-             "RELEASE_LOCKER": "🔒"}
+    icons = {
+        "OPEN_LOCKER"    : "🔓",
+        "ASSIGN_LOCKER"  : "🆕",
+        "RELEASE_LOCKER" : "🔒",
+        "FACE_REGISTER"  : "📝",
+        "FACE_VERIFY"    : "✅",
+        "FACE_FAIL"      : "❌",
+    }
 
     for row in rows:
         ts, ev, mssv, name, lid, dist, live, notes = tuple(row)
         icon   = icons.get(ev, "•")
-        dist_s = f"{dist:.3f}" if dist else "  —  "
-        lid_s  = str(lid) if lid else " —"
-        print(f"{ts:<21} {icon}{ev:<15} {str(mssv):<12} {str(name or ''):<18} "
-              f"{lid_s:<4} {dist_s:<7} {notes or ''}")
-    print(f"{'─'*82}\n")
+        lid_s  = str(lid) if lid else "—"
+        extra  = f"dist={dist:.3f}" if dist else (notes or "")
+        print(f"{ts:<21} {icon} {ev:<16} {str(mssv or ''):<12} "
+              f"{str(name or ''):<18} {lid_s:<6} {extra}")
+    print(f"{'─'*90}\n")
 
 
 def export_log_csv(path: str = "access_log.csv") -> None:
     import csv
     with _conn() as con:
-        rows = con.execute(
-            "SELECT timestamp, event, mssv, name, locker_id, "
-            "face_dist, live_result, notes FROM AccessLog ORDER BY id"
-        ).fetchall()
+        rows = con.execute("""
+            SELECT timestamp, event, mssv, name,
+                   locker_id, NULL as face_dist, NULL as live_result, NULL as notes
+            FROM LockerLog
+            UNION ALL
+            SELECT timestamp, event, mssv, name,
+                   NULL, face_dist, live_result, notes
+            FROM FaceLog
+            ORDER BY timestamp
+        """).fetchall()
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["timestamp","event","mssv","name",
-                         "locker_id","face_dist","live_result","notes"])
+        writer.writerow(["timestamp", "event", "mssv", "name",
+                         "locker_id", "face_dist", "live_result", "notes"])
         writer.writerows(rows)
     print(f"[log] Xuất {len(rows)} dòng → '{path}'")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  RATE LIMITING
+#  RATE LIMITING — dựa trên FaceLog
 # ══════════════════════════════════════════════════════════════════════════════
 
 def is_locked_out(mssv: str) -> tuple[bool, int]:
@@ -271,8 +398,8 @@ def is_locked_out(mssv: str) -> tuple[bool, int]:
               datetime.timedelta(seconds=LOCKOUT_SECS)).isoformat(timespec="seconds")
     with _conn() as con:
         (fails,) = con.execute(
-            "SELECT COUNT(*) FROM AccessLog "
-            "WHERE event='VERIFY_FAIL' AND mssv=? AND timestamp>=?",
+            "SELECT COUNT(*) FROM FaceLog "
+            "WHERE event='FACE_FAIL' AND mssv=? AND timestamp>=?",
             (mssv, cutoff)
         ).fetchone()
 
@@ -280,8 +407,8 @@ def is_locked_out(mssv: str) -> tuple[bool, int]:
             return False, 0
 
         row = con.execute(
-            "SELECT timestamp FROM AccessLog "
-            "WHERE event='VERIFY_FAIL' AND mssv=? ORDER BY id DESC LIMIT 1",
+            "SELECT timestamp FROM FaceLog "
+            "WHERE event='FACE_FAIL' AND mssv=? ORDER BY id DESC LIMIT 1",
             (mssv,)
         ).fetchone()
 
@@ -306,14 +433,12 @@ if __name__ == "__main__":
         export_log_csv()
     elif cmd == "users":
         users = list_users()
-        print(f"\n{'ID':<5} {'TÊN':<20} {'MSSV':<12} {'ROLE':<10} "
-              f"{'APPROVED':<10} {'FACE'}")
-        print("─" * 65)
+        print(f"\n{'MSSV':<12} {'TÊN':<20} {'ROLE':<10} {'APPROVED':<10} FACE")
+        print("─" * 60)
         for u in users:
             face = "✓" if u["has_face"] else "✗"
             appr = "✓" if u["is_approved"] else "✗"
-            print(f"{u['id']:<5} {u['name']:<20} {u['mssv']:<12} "
-                  f"{u['role']:<10} {appr:<10} {face}")
+            print(f"{u['mssv']:<12} {u['name']:<20} {u['role']:<10} {appr:<10} {face}")
     elif cmd == "lockers":
         with _conn() as con:
             rows = con.execute(
@@ -321,10 +446,10 @@ if __name__ == "__main__":
                 "FROM Lockers l LEFT JOIN Users u ON l.current_mssv=u.mssv "
                 "ORDER BY l.locker_id"
             ).fetchall()
-        print(f"\n{'TỦ':<6} {'STATUS':<12} {'SIZE':<10} {'MSSV':<12} TÊN")
+        print(f"\n{'TỦ':<6} {'STATUS':<12} {'SIZE':<8} {'MSSV':<12} TÊN")
         print("─" * 55)
         for r in rows:
-            print(f"{r[0]:<6} {r[1]:<12} {str(r[2]).strip():<10} "
+            print(f"{r[0]:<6} {r[1]:<12} {str(r[2]).strip():<8} "
                   f"{str(r[3] or '—'):<12} {r[4] or ''}")
     elif cmd == "release" and len(sys.argv) > 2:
         ok, msg = release_locker(sys.argv[2])

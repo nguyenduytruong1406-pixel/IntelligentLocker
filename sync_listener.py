@@ -3,97 +3,109 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 import time
-#------------------------------------------------
-#connection setup
-#------------------------------------------------
 
-# Initialize connections outside try block so finally can access them
-#  khoi tao ben ngoai try de finally co the nhin thay
-conn=None
+# ─────────────────────────────────────────────────────────────────────────────
+# Kết nối
+# ─────────────────────────────────────────────────────────────────────────────
+conn = None
 try:
-    # 1 Initialize Firebase
+    # 1. Khởi tạo Firebase
     cred = credentials.Certificate(r'D:/DATN/Software/test_db_ver1/private_key_lockers.json')
-    firebase_admin.initialize_app(cred,{
-        'databaseURL' : 'https://lockerxmakerspacexhcmute-default-rtdb.asia-southeast1.firebasedatabase.app'
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': 'https://lockerxmakerspacexhcmute-default-rtdb.asia-southeast1.firebasedatabase.app'
     })
     print('[Cloud] Connected successfully!')
 
-    # 2 Connect to sqlite
-    conn = sqlite3.connect('D:/DATN/Software/test_db_ver1/IntelligentLocker.db', check_same_thread=False)
+    # 2. Kết nối SQLite
+    conn = sqlite3.connect(
+        'D:/DATN/Software/test_db_ver1/IntelligentLocker.db',
+        check_same_thread=False
+    )
     cursor = conn.cursor()
     print("[Local] Database ready!")
 
-# ----------------------------------------------------------------
-# Event Handler Function
-#------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Handler: Firebase → SQLite
+# Lắng nghe node /users, đồng bộ xuống bảng Users (không đụng face_embedding)
+# ─────────────────────────────────────────────────────────────────────────────
 
-    # This function triggers automatically whenever Firebase changes
     def on_firebase_change(event):
-        print(f"\n [Alert] Firebase detected changes at path: {event.path}")
-        # event.data contains the newdata ( chua du lieu moi)
-        # event.path contains the changed path ( chua duong dan bi thay doi)
+        print(f"\n[Alert] Firebase thay đổi tại: {event.path}")
 
-        
-
-        # Skip if this is the initial connect event
-        # Bo qua neu la su kien khoi tao ban dau(path="/")
+        # Bỏ qua sự kiện khởi tạo ban đầu (path="/")
         if event.path == '/':
             return
+
         try:
-            ##Split the path to extract ID ( Cat dung duong dan de lay ID)
-            mssv = event.path.split('/')[1]
-            # Fetch the latest full data ( keo toan bo du lieu)
+            # Lấy mssv từ path "/22146436/..." → "22146436"
+            mssv = event.path.strip('/').split('/')[0]
+
+            # Kéo toàn bộ dữ liệu user từ Firebase
             user_data = db.reference(f'users/{mssv}').get()
-            # Debug line to sê raw data
-            print(f" [Debug] Raw data from Firebase: {user_data}")
+            print(f"[Debug] Firebase data: {user_data}")
 
-            # Check if user exists and is approved
-            if user_data is not None :
-                name = user_data.get('name','Unknown')
-                rfid = user_data.get('rfid', '')
-                is_approved = user_data.get('is_approved',0)
+            if user_data is None:
+                print(f"[Sync] User {mssv} đã bị xóa khỏi Firebase, bỏ qua.")
+                return
 
-                # Save to Sqlite
-                command = "Insert or Replace into Users(name,mssv,rfid,is_approved) Values(?,?,?,?)"
-                cursor.execute(command,(name,mssv,rfid,is_approved))
-                conn.commit()
+            name        = user_data.get('name', 'Unknown')
+            is_approved = user_data.get('is_approved', 0)
+            # has_face chỉ đọc từ Firebase, KHÔNG ghi đè nếu đã có embedding local
+            has_face_fb = 1 if user_data.get('has_face') else 0
 
-                # Smart print based on status
-                status_text = "Approved (1)" if str(is_approved) == '1' else "Pending/Locked (0)"
-                print(f"[Sync] Status: {status_text} | Student: {name} - ID: {mssv}")
-            
-            
+            # Kiểm tra user đã tồn tại trong SQLite chưa
+            cursor.execute("SELECT mssv, has_face FROM Users WHERE mssv=?", (mssv,))
+            row = cursor.fetchone()
+
+            if row:
+                # Đã tồn tại → cập nhật name, is_approved
+                # has_face: lấy giá trị lớn hơn (local embedding > Firebase flag)
+                # để tránh ghi đè mất trạng thái đã đăng ký khuôn mặt
+                current_has_face = row[1] if row[1] is not None else 0
+                merged_has_face  = max(current_has_face, has_face_fb)
+
+                cursor.execute(
+                    "UPDATE Users SET name=?, is_approved=?, has_face=? WHERE mssv=?",
+                    (name, is_approved, merged_has_face, mssv)
+                )
+                action = "Cập nhật"
             else:
+                # User mới hoàn toàn → thêm mới (face_embedding để NULL)
+                cursor.execute(
+                    "INSERT INTO Users (mssv, name, is_approved, has_face) "
+                    "VALUES (?, ?, ?, ?)",
+                    (mssv, name, is_approved, has_face_fb)
+                )
+                action = "Thêm mới"
 
-                print(f"[Status] Student {mssv} is not approved yet or detected.")
-        
+            conn.commit()
+
+            status_text = "Approved" if str(is_approved) == '1' else "Pending/Locked"
+            face_text   = "Có khuôn mặt" if has_face_fb else "Chưa đăng ký"
+            print(f"[Sync] {action} | {name} ({mssv}) | {status_text} | {face_text}")
+
         except Exception as e:
-            print(f"[error] Failed to process data: {e}")
-#------------------------------------------------------------------
-# Start the listener
-#---------------------------------------------------------------------
+            print(f"[Error] Không xử lý được dữ liệu: {e}")
 
-    # Point to the users node and start listening
+# ─────────────────────────────────────────────────────────────────────────────
+# Bắt đầu lắng nghe
+# ─────────────────────────────────────────────────────────────────────────────
+
     users_ref = db.reference('users')
+    print("\n[System] Đang lắng nghe thay đổi từ Cloud... Nhấn Ctrl+C để dừng.")
 
-    print("\n System is listening for Cloud updates...Press Ctrl+c to stop")
-    # The listen() command keeps the program running continuously
-    # Start listening
-    listener =  users_ref.listen(on_firebase_change)
+    listener = users_ref.listen(on_firebase_change)
 
-    # Keep the main program alive
     while True:
         time.sleep(1)
 
-# Catch the event then user presses Ctrl+C to stop
 except KeyboardInterrupt:
-    print("\n [System] User interrupted the program. Shutting down...")
+    print("\n[System] Người dùng dừng chương trình.")
 
 except Exception as e:
-    print(f" [Error] System crashed: {e}")
+    print(f"[Error] Hệ thống gặp lỗi: {e}")
 
-# The block that Always runs at the end to clean up memory
 finally:
     if conn:
-        conn.close() # close SQLite safely
-        print("[Local] SQLite connection closed safely.")
+        conn.close()
+        print("[Local] Đã đóng kết nối SQLite an toàn.")
