@@ -14,7 +14,8 @@ body.dark{--bg:#18191A;--surface:#242526;--border:#3E4042;--border2:#3E4042;--te
 @media(prefers-color-scheme:dark){body.system{--bg:#18191A;--surface:#242526;--border:#3E4042;--border2:#3E4042;--text:#E4E6EB;--text2:#B0B3B8;--text3:#B0B3B8;--text4:#888;--primary:#4D94FF;--primary-hover:#3378e0;--nav-hover-bg:#3A3B3C;--nav-active-bg:#3A3B3C;--table-bg:#242526;--table-th:#3A3B3C;--table-th-text:#E4E6EB;--toggle-hover:#3A3B3C;--locker-empty-bg:#1e3a23;--locker-empty-border:#28a745;--locker-empty-text:#81c784;--locker-occ-bg:#3a1e1e;--locker-occ-border:#dc3545;--locker-occ-text:#e57373;--modal-bg:#242526;--input-border:#3E4042;--btn-export-bg:#138496}}
 .sidebar-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:40;transition:0.3s}.sidebar-overlay.show{display:block}
 .mobile-menu-btn{display:none;background:transparent;border:none;color:var(--text);cursor:pointer;margin-right:15px}
-.theme-menu{position:absolute;bottom:0px;right:55px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 0;box-shadow:0 4px 16px rgba(0,0,0,.18);display:none;z-index:200;min-width:180px}.theme-menu.open{display:block}
+.theme-menu{position:fixed;bottom:20px;right:75px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 0;box-shadow:0 4px 16px rgba(0,0,0,.18);display:none;z-index:999;min-width:180px}.theme-menu.open{display:block}
+.notif-panel{position:fixed;top:20px;right:75px;width:300px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.1);display:none;z-index:999;flex-direction:column;max-height:400px}.notif-panel.open{display:flex}
 .theme-option{padding:10px 18px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:.95rem;color:var(--text);transition:.15s}.theme-option:hover{background:var(--nav-hover-bg)}.theme-option.selected{color:var(--primary);font-weight:600}.theme-option .check{opacity:0;font-size:.85rem}.theme-option.selected .check{opacity:1}
 body{background-color:var(--bg);color:var(--text);height:100vh;height:100dvh;width:100vw;max-width:100%;display:flex;overflow:hidden;transition:background-color .3s,color .3s}
 .sidebar{width:260px;flex-shrink:0;background-color:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:space-between;transition:width .3s,background-color .3s,left 0.3s;z-index:50}.sidebar.collapsed{width:75px}
@@ -30,7 +31,6 @@ body{background-color:var(--bg);color:var(--text);height:100vh;height:100dvh;wid
 .icon-btn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:1rem;transition:.2s,transform .3s;border:none;background:transparent;line-height:1}.icon-btn:hover{background-color:var(--toggle-hover);color:var(--text)}
 .toggle-btn-firebase{font-size:1.2rem;cursor:pointer;transition:transform 0.3s;color:var(--text3)}.sidebar.collapsed .toggle-btn-firebase{transform:rotate(180deg)}
 .right-bar{width:60px;min-width:60px;flex-shrink:0;background-color:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding-top:20px;padding-bottom:15px;position:relative;z-index:10;overflow-y:auto;scrollbar-width:none;-ms-overflow-style:none}.right-bar::-webkit-scrollbar{display:none}
-.notif-panel{position:absolute;top:60px;right:70px;width:300px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.1);display:none;z-index:201;flex-direction:column;max-height:400px}.notif-panel.open{display:flex}
 .notif-header{padding:15px;border-bottom:1px solid var(--border2);font-weight:bold;color:var(--text)}.notif-body{overflow-y:auto;padding:10px 0}
 .notif-item{padding:10px 15px;border-bottom:1px solid var(--border2);font-size:0.9rem;cursor:pointer;transition:0.2s;color:var(--text)}.notif-item:hover{background:var(--nav-hover-bg)}
 .notif-empty{padding:20px;text-align:center;color:var(--text4);font-style:italic}
@@ -56,40 +56,31 @@ th{background-color:var(--table-th);color:var(--table-th-text)}
 .box-small{grid-column:span 2;height:110px}.box-large{grid-column:span 3;height:160px}
 .control-box{grid-column:span 2;height:110px;background:linear-gradient(135deg,#1e3c72,#2a5298);color:white;border:2px solid #fff;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:1.1rem;font-weight:bold;box-shadow:0 4px 15px rgba(0,0,0,.3);text-align:center;cursor:pointer;transition:.2s}
 .control-box:hover{transform:scale(1.05)}.control-box span{font-size:2.2rem;margin-bottom:5px}
-.modal{display:none;position:fixed;z-index:100;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,.5);align-items:center;justify-content:center}
+.modal{display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,.5);align-items:center;justify-content:center}
 .modal-content{background-color:var(--modal-bg);padding:30px;border-radius:12px;width:350px;max-width:90vw;position:relative;box-shadow:0 5px 15px rgba(0,0,0,.3);animation:fadeIn .2s}
 .close-btn{position:absolute;top:15px;right:20px;font-size:1.5rem;cursor:pointer;color:var(--text4)}.close-btn:hover{color:var(--text)}
 .modal-detail-row{margin:10px 0;font-size:1.1rem;border-bottom:1px dashed var(--border2);padding-bottom:5px;color:var(--text)}
 .modal-detail-row strong{color:var(--text2);display:inline-block;width:100px}
-#toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:.9rem;opacity:0;transform:translateY(10px);transition:opacity .3s,transform .3s;z-index:999;pointer-events:none;max-width:320px}
+#toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:.9rem;opacity:0;transform:translateY(10px);transition:opacity .3s,transform .3s;z-index:1000;pointer-events:none;max-width:320px}
 #toast.show{opacity:1;transform:translateY(0)}
-
-/* ========= Stats cards ========= */
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;text-align:center;transition:.2s;box-shadow:0 2px 5px rgba(0,0,0,.05)}
 .stat-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
 .stat-value{font-size:2.5rem;font-weight:700;color:var(--primary);margin-bottom:8px}
-.stat-label{font-size:.9rem;color:var(--text3);font-weight:500}
-
-/* ========= Search box ========= */
+.stat-card .stat-label{font-size:.9rem;color:var(--text3);font-weight:500}
 .search-box{margin-bottom:15px;position:relative}
 .search-box input{width:100%;max-width:400px;padding:10px 15px 10px 40px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:.95rem;transition:.2s}
 .search-box input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,123,255,.1)}
 .search-box .ms{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text4);pointer-events:none}
-
-/* ========= Action buttons in table ========= */
 .action-btns{display:flex;gap:5px;flex-wrap:wrap}
 .btn-sm{padding:4px 10px;font-size:.8rem}
 .btn-info{background-color:#17a2b8}.btn-info:hover{background-color:#138496}
 .btn-assign{background-color:#6f42c1}.btn-assign:hover{background-color:#5a32a3}
-
-/* ========= User detail modal ========= */
 .modal-wide{width:500px;max-width:90vw}
 .user-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px}
 .user-info-item{padding:10px;background:var(--nav-hover-bg);border-radius:6px}
 .user-info-item strong{display:block;font-size:.85rem;color:var(--text3);margin-bottom:4px}
 .user-info-item span{font-size:1.05rem;color:var(--text)}
-
 @media screen and (max-width:768px){
 .mobile-menu-btn{display:flex;align-items:center;justify-content:center}
 .sidebar{position:fixed;height:100%;left:-260px;top:0;width:260px!important;box-shadow:2px 0 15px rgba(0,0,0,0.3)}.sidebar.mobile-open{left:0}
@@ -97,12 +88,9 @@ th{background-color:var(--table-th);color:var(--table-th-text)}
 h2{font-size:1.2rem}
 .top-header{margin-bottom:12px;padding-bottom:8px}
 .section-header{flex-direction:column;align-items:flex-start;gap:8px}
-.locker-scroll-wrapper{overflow-x:hidden;padding-bottom:5px}
-.locker-grid{min-width:0!important;width:100%;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:5px}
-.box-small{height:80px!important}.box-large{height:100px!important}.control-box{height:75px!important}
-.locker-box{font-size:0.95rem;border-width:1.5px;border-radius:8px}
-.locker-box small{font-size:0.75rem;margin-top:2px}
-.control-box span{font-size:1.5rem;margin-bottom:2px}
+.locker-scroll-wrapper{overflow-x:auto;padding-bottom:10px;}
+.locker-grid{min-width:650px !important;width:auto;grid-template-columns:repeat(6,1fr);gap:12px;}
+.box-small{height:90px !important}.box-large{height:120px !important}.control-box{height:90px !important}
 .right-bar{width:55px;min-width:55px;flex-shrink:0;padding-top:10px}
 .notif-panel{right:60px;width:260px;max-width:80vw}
 .theme-menu{right:60px}
@@ -118,7 +106,7 @@ h2{font-size:1.2rem}
 <div class="logo-container"><img src="logo_web.jpg?v=2" alt="Logo" class="sidebar-logo"></div>
 <ul class="nav-menu">
 <li class="nav-item active" onclick="switchTab('tab-home',this)"><span class="nav-icon ms">home</span><span class="nav-text">Trang Chủ</span></li>
-<li class="nav-item" onclick="switchTab('tab-users',this)"><span class="nav-icon ms">group</span><span class="nav-text">Sinh Viên</span></li>
+<li class="nav-item" id="nav-users" onclick="switchTab('tab-users',this)"><span class="nav-icon ms">group</span><span class="nav-text">Sinh Viên</span></li>
 <li class="nav-item" onclick="switchTab('tab-lockers',this)"><span class="nav-icon ms">inventory_2</span><span class="nav-text">Tủ Khóa</span></li>
 <li class="nav-item" id="nav-logs" onclick="switchTab('tab-logs',this)"><span class="nav-icon ms">receipt_long</span><span class="nav-text">Nhật Ký</span><span class="badge" id="log-badge">0</span></li>
 </ul>
@@ -131,9 +119,8 @@ h2{font-size:1.2rem}
 <main class="main-content">
 <header class="top-header">
 <button class="mobile-menu-btn" onclick="toggleMobileSidebar()" title="Menu"><span class="ms">menu</span></button>
-<h2 id="tab-title">Trang Chủ</h2>
+<h2 id="tab-title">Locker Management System - Admin</h2>
 </header>
-
 <div id="tab-home" class="tab-content active">
     <div class="stats-grid">
         <div class="stat-card" id="stat-users-approved"><div class="stat-value">0</div><div class="stat-label">Sinh viên đã duyệt</div></div>
@@ -141,7 +128,8 @@ h2{font-size:1.2rem}
         <div class="stat-card" id="stat-lockers-free"><div class="stat-value">0</div><div class="stat-label">Tủ trống</div></div>
         <div class="stat-card" id="stat-lockers-used"><div class="stat-value">0</div><div class="stat-label">Tủ đang dùng</div></div>
     </div>
-</div> <div id="tab-users" class="tab-content">
+</div>
+<div id="tab-users" class="tab-content">
     <div class="section-header">
         <h3>Danh Sách Sinh Viên</h3>
         <button class="btn-export" onclick="exportUsers()"><span class="ms" style="font-size:16px;vertical-align:middle">download</span> Xuất CSV</button>
@@ -157,12 +145,10 @@ h2{font-size:1.2rem}
         </table>
     </div>
 </div>
-
 <div id="tab-lockers" class="tab-content">
     <h3>Sơ đồ Tủ Khóa <small style="font-weight:normal;font-size:0.9rem">(Bấm vào tủ để xem)</small></h3>
     <div class="locker-scroll-wrapper"><div class="locker-grid" id="locker-grid"></div></div>
 </div>
-
 <div id="tab-logs" class="tab-content">
     <div class="section-header">
         <h3>Nhật Ký Truy Cập</h3>
@@ -178,26 +164,26 @@ h2{font-size:1.2rem}
 </main>
 
 <aside class="right-bar">
-<div style="position:relative">
-<button class="icon-btn" id="notif-btn" onclick="toggleNotifMenu()" title="Thông báo">
-<span class="ms">notifications</span><span class="notif-badge" id="notif-badge">0</span>
-</button>
-<div class="notif-panel" id="notif-panel">
-<div class="notif-header">Thông báo chờ duyệt</div>
-<div class="notif-body" id="notif-list"></div>
-</div>
-</div>
-<div style="margin-top:auto;display:flex;flex-direction:column;gap:15px;align-items:center">
-<div style="position:relative">
-<button class="icon-btn" id="darkmode-btn" onclick="toggleThemeMenu()" title="Giao diện"><span class="ms">contrast</span></button>
-<div class="theme-menu" id="theme-menu">
-<div class="theme-option" id="opt-light" onclick="setTheme('light')"><span class="ms" style="font-size:18px">light_mode</span> Sáng <span class="check">✓</span></div>
-<div class="theme-option" id="opt-dark" onclick="setTheme('dark')"><span class="ms" style="font-size:18px">dark_mode</span> Tối <span class="check">✓</span></div>
-<div class="theme-option" id="opt-system" onclick="setTheme('system')"><span class="ms" style="font-size:18px">devices</span> Mặc định thiết bị <span class="check">✓</span></div>
-</div>
-</div>
-<button class="icon-btn" onclick="window.logout()" title="Đăng xuất"><span class="ms">logout</span></button>
-</div>
+    <div style="position:relative">
+        <button class="icon-btn" id="notif-btn" onclick="toggleNotifMenu()" title="Thông báo">
+            <span class="ms">notifications</span><span class="notif-badge" id="notif-badge">0</span>
+        </button>
+        <div class="notif-panel" id="notif-panel">
+            <div class="notif-header">Thông báo chờ duyệt</div>
+            <div class="notif-body" id="notif-list"></div>
+        </div>
+    </div>
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:15px;align-items:center">
+        <div style="position:relative">
+            <button class="icon-btn" id="darkmode-btn" onclick="toggleThemeMenu()" title="Giao diện"><span class="ms">contrast</span></button>
+            <div class="theme-menu" id="theme-menu">
+                <div class="theme-option" id="opt-light" onclick="setTheme('light')"><span class="ms" style="font-size:18px">light_mode</span> Sáng <span class="check">✓</span></div>
+                <div class="theme-option" id="opt-dark" onclick="setTheme('dark')"><span class="ms" style="font-size:18px">dark_mode</span> Tối <span class="check">✓</span></div>
+                <div class="theme-option" id="opt-system" onclick="setTheme('system')"><span class="ms" style="font-size:18px">devices</span> Mặc định thiết bị <span class="check">✓</span></div>
+            </div>
+        </div>
+        <button class="icon-btn" onclick="window.logout()" title="Đăng xuất"><span class="ms">logout</span></button>
+    </div>
 </aside>
 
 <div class="modal" id="lockerModal">
@@ -292,9 +278,10 @@ window.toggleMobileSidebar=function(){document.getElementById('sidebar').classLi
 document.addEventListener('click',function(e){
 const themeMenu=document.getElementById('theme-menu');
 const themeBtn=document.getElementById('darkmode-btn');
-if(themeMenu&&!themeMenu.contains(e.target)&&!themeBtn.contains(e.target))themeMenu.classList.remove('open');
 const notifMenu=document.getElementById('notif-panel');
 const notifBtn=document.getElementById('notif-btn');
+
+if(themeMenu&&!themeMenu.contains(e.target)&&!themeBtn.contains(e.target))themeMenu.classList.remove('open');
 if(notifMenu&&!notifMenu.contains(e.target)&&!notifBtn.contains(e.target))notifMenu.classList.remove('open');
 });
 
@@ -329,7 +316,6 @@ function clearBadge(){document.getElementById('log-badge').classList.remove('vis
 
 let _usersData={},_lockersData={},_allUsersData=[];
 
-// ========= Users =========
 onValue(ref(db,'users'),(snapshot)=>{
 const data=snapshot.val()||{};
 const tbody=document.getElementById('student-list');
@@ -337,29 +323,40 @@ const notifList=document.getElementById('notif-list');
 _usersData=data;
 _allUsersData=[];
 let pendingCount=0,approvedCount=0;
+let actualNotifCount=0;
 
 for(const mssv in data){
 const s=data[mssv];
-if(s.has_face&&_knownUsers[mssv]===false)sendNotif('👤 Khuôn mặt mới',`${s.name||'Unknown'} (${mssv}) vừa đăng ký khuôn mặt`);
-_knownUsers[mssv]=!!s.has_face;
+const hasFace=(s.has_face===true||String(s.has_face)==='1'||String(s.has_face).toLowerCase()==='true');
+if(hasFace&&_knownUsers[mssv]===false)sendNotif('👤 Khuôn mặt mới',`${s.name||'Unknown'} (${mssv}) vừa đăng ký khuôn mặt`);
+_knownUsers[mssv]=hasFace;
 }
 
 notifList.innerHTML='';
 for(const mssv in data){
-const s=data[mssv];
-const isAppr=(String(s.is_approved)==='1'||s.is_approved===true||String(s.is_approved).toLowerCase()==='true');
-const safeName = s.name || 'Chưa cập nhật'; 
+  const s=data[mssv];
+  const isAppr=(String(s.is_approved)==='1'||s.is_approved===true||String(s.is_approved).toLowerCase()==='true');
+  const safeName = s.name || 'Chưa cập nhật'; 
 
-if(isAppr)approvedCount++;else pendingCount++;
-if(!isAppr&&s.has_face){
-notifList.innerHTML+=`<div class="notif-item" onclick="switchTab('tab-users',document.querySelectorAll('.nav-item')[1])"><strong>${safeName}</strong> (${mssv})<br><small>Đã ĐK khuôn mặt. Cần duyệt.</small></div>`;
-}
-_allUsersData.push({mssv,name:safeName,has_face:s.has_face,is_approved:isAppr,role:s.role||'student'});
+  // Đếm tất cả sinh viên chưa duyệt (bất kể khuôn mặt) để hiển thị ở Stat Card
+  if(isAppr) approvedCount++; else pendingCount++;
+  
+  // Logic Notification: Chỉ hiện người chưa duyệt (is_approved: false)
+  if(!isAppr){
+    actualNotifCount++;
+    notifList.innerHTML+=`<div class="notif-item" onclick="window.viewPendingUser('${mssv}')"><strong>${safeName}</strong> (${mssv})<br><small>Chờ duyệt tài khoản.</small></div>`;
+  }
+  _allUsersData.push({mssv,name:safeName,has_face:s.has_face,is_approved:isAppr,role:s.role||'student'});
 }
 
 const badge=document.getElementById('notif-badge');
-if(pendingCount>0){badge.textContent=pendingCount;badge.classList.add('visible')}
-else{badge.classList.remove('visible');notifList.innerHTML='<div class="notif-empty">Không có yêu cầu chờ duyệt</div>'}
+if(actualNotifCount>0){
+    badge.textContent=actualNotifCount;
+    badge.classList.add('visible');
+}else{
+    badge.classList.remove('visible');
+    notifList.innerHTML='<div class="notif-empty">Không có yêu cầu chờ duyệt</div>';
+}
 
 document.querySelector('#stat-users-approved .stat-value').textContent=approvedCount;
 document.querySelector('#stat-users-pending .stat-value').textContent=pendingCount;
@@ -369,6 +366,7 @@ renderUsers();
 
 function renderUsers(filter=''){
 const tbody=document.getElementById('student-list');
+if(!tbody) return;
 tbody.innerHTML='';
 const filterLower = String(filter || '').toLowerCase(); 
 const filtered=_allUsersData.filter(s=>
@@ -400,11 +398,10 @@ update(ref(db,`users/${mssv}`),{is_approved:v})
 .then(()=>showToast(v===1?`✅ Đã duyệt thẻ sinh viên: ${mssv}`:`🔒 Đã khóa thẻ sinh viên: ${mssv}`))
 .catch(error=>{
 console.error("Lỗi Duyệt Thẻ:",error);
-alert(`❌ KHÔNG THỂ DUYỆT THẺ!\n\nLỗi: ${error.message}\n\nHướng dẫn sửa: Truy cập Firebase Console -> Realtime Database -> Rules -> Đảm bảo ".write": "auth != null"`);
+alert(`❌ KHÔNG THỂ DUYỆT THẺ!\n\nLỗi: ${error.message}`);
 });
 };
 
-// ========= User Detail Modal =========
 window._currentUserMSSV='';
 window.openUserDetail=function(mssv){
 window._currentUserMSSV=mssv;
@@ -420,7 +417,6 @@ document.getElementById('user-detail-locker').textContent=userLocker?userLocker.
 document.getElementById('userModal').style.display='flex';
 };
 
-// ========= Assign Locker Modal =========
 window.openAssignModal=function(mssv){
 document.getElementById('userModal').style.display='none';
 document.getElementById('assign-mssv').textContent=mssv;
@@ -456,7 +452,6 @@ document.getElementById('userModal').style.display='none';
 .catch(error=>{console.error(error);showToast('❌ Lỗi: '+error.message)});
 };
 
-// ========= Lockers =========
 const gridLayout=[
 {id:1,type:'small'},{id:2,type:'small'},{id:3,type:'small'},
 {id:4,type:'small'},{type:'control'},
@@ -467,6 +462,7 @@ window.lockerDataGlobal={};
 
 onValue(ref(db,'lockers'),(snapshot)=>{
 const lockerGrid=document.getElementById('locker-grid');
+if(!lockerGrid) return;
 lockerGrid.innerHTML='';
 const data=snapshot.val()||{};
 
@@ -501,6 +497,7 @@ document.querySelector('#stat-lockers-used .stat-value').textContent=usedCount;
 
 window.openLockerModal=function(lockerId){
 const d=window.lockerDataGlobal[lockerId];
+if(!d) return;
 const key=d.locker_id;
 document.getElementById('modal-title').innerText=`Tủ ${key}`;
 const ss=document.getElementById('modal-status');
@@ -510,7 +507,6 @@ document.getElementById('modal-time').innerText=d.lastOpen!=='—'?d.lastOpen:'-
 document.getElementById('lockerModal').style.display='flex';
 };
 
-// ========= Logs =========
 const EVENT_MAP={
 'OPEN_LOCKER':{label:'🔓 Mở tủ',color:'#007bff'},
 'ASSIGN_LOCKER':{label:'🆕 Gán tủ mới',color:'#6f42c1'},
@@ -521,6 +517,7 @@ let _logsData={};
 
 onValue(query(ref(db,'logs'),limitToLast(50)),(snapshot)=>{
 const tbody=document.getElementById('log-list');
+if(!tbody) return;
 tbody.innerHTML='';
 _logsData=snapshot.val()||{};
 const keys=Object.keys(_logsData);
@@ -534,49 +531,31 @@ tbody.innerHTML+=`<tr><td style="color:#666;font-family:monospace">${log.time||'
 });
 });
 
-// ========= Export CSV =========
-function downloadCSV(filename,rows,headers){
-const csv=[headers.join(','),...rows].join('\n');
-const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-const a=document.createElement('a');
-a.href=URL.createObjectURL(blob);
-a.download=filename;
-a.click();
-URL.revokeObjectURL(a.href);
-}
-
-window.exportUsers=function(){
-const rows=_allUsersData.map(s=>[s.mssv,`"${s.name}"`,s.has_face?'Đã có':'Chưa có',s.is_approved?'Đã duyệt':'Chờ duyệt',s.role].join(','));
-const date=new Date().toISOString().slice(0,10);
-downloadCSV(`users_${date}.csv`,rows,['MSSV','Tên','Khuôn Mặt','Trạng Thái','Vai Trò']);
-};
-
-window.exportLogs=function(){
-const rows=Object.values(_logsData).map(l=>[`"${l.time||''}"`,l.mssv||'',`"${l.name||''}"`,l.locker_id||'',l.event||''].join(','));
-const date=new Date().toISOString().slice(0,10);
-downloadCSV(`logs_${date}.csv`,rows,['Thời Gian','MSSV','Tên','Tủ','Sự Kiện']);
-};
-
-// ========= Tab switch =========
-const TITLES={
-'tab-home':'Trang Chủ',
-'tab-users':'Danh Sách Sinh Viên',
-'tab-lockers':'Lưới Tủ Khóa',
-'tab-logs':'Nhật Ký Truy Cập'
-};
-
 window.switchTab=function(tabId,el){
 document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
 document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
 document.getElementById(tabId).classList.add('active');
-el.classList.add('active');
-const titleEl=document.getElementById('tab-title');if(titleEl)titleEl.innerText=TITLES[tabId]||'Smart Locker - Admin';
+if(el) el.classList.add('active');
 _isOnLogs=(tabId==='tab-logs');
 if(_isOnLogs)clearBadge();
 if(window.innerWidth<=768){
 document.getElementById('sidebar').classList.remove('mobile-open');
 document.getElementById('sidebar-overlay').classList.remove('show');
 }
+};
+
+window.viewPendingUser = function(mssv) {
+  document.getElementById('notif-panel').classList.remove('open');
+  const navUserBtn = document.getElementById('nav-users');
+  window.switchTab('tab-users', navUserBtn);
+  const searchInput = document.getElementById('user-search');
+  if (searchInput) {
+    searchInput.value = mssv;
+    window.filterUsers(); 
+  }
+  setTimeout(() => {
+    window.openUserDetail(mssv);
+  }, 150);
 };
 
 window.toggleSidebar=function(){document.getElementById('sidebar').classList.toggle('collapsed')};

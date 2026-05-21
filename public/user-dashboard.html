@@ -41,9 +41,21 @@ body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-
 /* Lookup box */
 .lookup-card{background:var(--surface);border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,.08);padding:24px;margin-bottom:20px}
 .lookup-card h3{font-size:1rem;font-weight:600;color:var(--text2);margin-bottom:14px;display:flex;align-items:center;gap:8px}
-.input-row{display:flex;gap:10px}
-.input-row input{flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:1rem;background:var(--bg);color:var(--text);outline:none;transition:.2s}
-.input-row input:focus{border-color:var(--primary)}
+.input-row{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  justify-content:center; /* Center trên mobile */
+}
+.input-row input{
+  flex:1;
+  max-width:180px; /* Thu gọn input MSSV */
+  padding:10px 14px;
+.input-row input:focus{border-color:var(--primary)}}
+@media(min-width:600px){
+  .input-row{justify-content:flex-start} /* Desktop: align trái */
+  .input-row input{max-width:none} /* Desktop: full width */
+}
 .btn-lookup{padding:10px 18px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:.2s;white-space:nowrap}
 .btn-lookup:hover{background:var(--primary-hover)}
 .not-found{color:var(--error);font-size:.88rem;margin-top:10px;display:none;align-items:center;gap:6px}
