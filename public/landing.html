@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Locker — HCMUTE</title>
+<link rel="icon" type="image/jpeg" href="logo_web.jpg?v=2">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Tahoma,sans-serif}
+:root{
+  --bg:#f0f4f8;--surface:#fff;--border:#e2e8f0;
+  --text:#1a202c;--text2:#4a5568;--text3:#718096;
+  --primary:#007bff;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#0f1117;--surface:#1a1b1e;--border:#2d2f33;
+  --text:#f0f4f8;--text2:#a0aec0;--text3:#718096;
+  --primary:#4D94FF;
+}}
+.ms{font-family:'Material Symbols Rounded';font-weight:normal;font-style:normal;font-size:32px;line-height:1;display:inline-block;white-space:nowrap;direction:ltr;-webkit-font-smoothing:antialiased;font-variation-settings:'FILL' 1,'wght' 300,'GRAD' 0,'opsz' 48}
+
+body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 20px}
+
+.brand{text-align:center;margin-bottom:48px}
+.brand img{width:80px;height:80px;border-radius:16px;object-fit:cover;box-shadow:0 4px 20px rgba(0,0,0,.12)}
+.brand h1{font-size:2rem;font-weight:700;margin-top:16px;color:var(--text)}
+.brand p{color:var(--text3);font-size:1rem;margin-top:6px}
+
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;width:100%;max-width:780px}
+@media(max-width:600px){.cards{grid-template-columns:1fr}}
+
+.card{background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:32px 24px;display:flex;flex-direction:column;align-items:center;text-align:center;cursor:pointer;text-decoration:none;color:inherit;transition:.2s;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;inset:0;opacity:0;transition:.2s;border-radius:inherit}
+.card:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,.12);border-color:var(--card-color)}
+.card:hover::before{opacity:.04}
+
+.card-icon{width:64px;height:64px;border-radius:16px;display:flex;align-items:center;justify-content:center;margin-bottom:18px;font-size:32px}
+.card h2{font-size:1.1rem;font-weight:700;margin-bottom:8px;color:var(--text)}
+.card p{font-size:.88rem;color:var(--text2);line-height:1.5}
+.card-arrow{margin-top:20px;font-size:.85rem;font-weight:600;display:flex;align-items:center;gap:4px}
+
+/* Card 1 — Đăng ký */
+.card-register{--card-color:#007bff}
+.card-register .card-icon{background:rgba(0,123,255,.1);color:#007bff}
+.card-register .card-arrow{color:#007bff}
+.card-register:hover{background:rgba(0,123,255,.02)}
+
+/* Card 2 — Admin */
+.card-admin{--card-color:#6f42c1}
+.card-admin .card-icon{background:rgba(111,66,193,.1);color:#6f42c1}
+.card-admin .card-arrow{color:#6f42c1}
+.card-admin:hover{background:rgba(111,66,193,.02)}
+
+/* Card 3 — Tra cứu */
+.card-lookup{--card-color:#28a745}
+.card-lookup .card-icon{background:rgba(40,167,69,.1);color:#28a745}
+.card-lookup .card-arrow{color:#28a745}
+.card-lookup:hover{background:rgba(40,167,69,.02)}
+
+.footer{margin-top:40px;color:var(--text3);font-size:.82rem;text-align:center}
+</style>
+</head>
+<body>
+<div id="admin-bar" style="display:none;position:fixed;top:0;left:0;right:0;background:#6f42c1;color:#fff;padding:10px 20px;font-size:.88rem;align-items:center;justify-content:space-between;z-index:100;gap:12px">
+  <span>🔐 Đang đăng nhập: <strong id="admin-email"></strong></span>
+  <div style="display:flex;gap:10px">
+    <button onclick="goDashboard()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:5px 14px;border-radius:6px;cursor:pointer;font-weight:600">Vào Dashboard</button>
+    <button onclick="doLogout()" style="background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff;padding:5px 14px;border-radius:6px;cursor:pointer">Đăng xuất</button>
+  </div>
+</div>
+
+<div class="brand">
+  <img src="logo_web.jpg?v=2" alt="Logo">
+  <h1>Smart Locker</h1>
+  <p>Hệ thống quản lý tủ thông minh — Makerspace HCMUTE</p>
+</div>
+
+<div class="cards">
+
+  <a class="card card-register" href="register.html">
+    <div class="card-icon">
+      <span class="ms">how_to_reg</span>
+    </div>
+    <h2>Đăng Ký Tài Khoản</h2>
+    <p>Sinh viên đăng ký lần đầu để được cấp tủ khóa</p>
+    <div class="card-arrow">
+      Đăng ký ngay <span class="ms" style="font-size:16px;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20">arrow_forward</span>
+    </div>
+  </a>
+
+  <a class="card card-admin" href="login.html">
+    <div class="card-icon">
+      <span class="ms">admin_panel_settings</span>
+    </div>
+    <h2>Quản Trị Admin</h2>
+    <p>Dành cho nhân viên quản lý sinh viên, tủ và nhật ký</p>
+    <div class="card-arrow">
+      Đăng nhập <span class="ms" style="font-size:16px;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20">arrow_forward</span>
+    </div>
+  </a>
+
+  <a class="card card-lookup" href="user-dashboard.html">
+    <div class="card-icon">
+      <span class="ms">manage_search</span>
+    </div>
+    <h2>Tra Cứu Tủ</h2>
+    <p>Xem trạng thái tủ, lịch sử mở tủ và tiến trình đăng ký</p>
+    <div class="card-arrow">
+      Tra cứu <span class="ms" style="font-size:16px;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20">arrow_forward</span>
+    </div>
+  </a>
+
+</div>
+
+<div class="footer">© 2026 Makerspace HCMUTE · Smart Locker System</div>
+
+
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+import{getAuth,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
+const app=initializeApp({
+  apiKey:"AIzaSyDwvFJXeKPvGi1Wj1RJlm0Pe5UU-eAkVms",
+  authDomain:"lockerxmakerspacexhcmute.firebaseapp.com",
+  projectId:"lockerxmakerspacexhcmute",
+  databaseURL:"https://lockerxmakerspacexhcmute-default-rtdb.asia-southeast1.firebasedatabase.app"
+});
+const auth=getAuth(app);
+const bar=document.getElementById('admin-bar');
+onAuthStateChanged(auth,(user)=>{
+  if(user){
+    bar.style.display='flex';
+    document.getElementById('admin-email').textContent=user.email;
+  }
+});
+window.goDashboard=()=>window.location.href='index.html';
+window.doLogout=()=>signOut(auth).then(()=>{bar.style.display='none';});
+</script>
+</body>
+</html>

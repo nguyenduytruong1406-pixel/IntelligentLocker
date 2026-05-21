@@ -36,6 +36,7 @@
         </div>
         
         <button class="btn-login" onclick="login()">Đăng nhập</button>
+        <p style="margin-top:16px;font-size:.85rem"><a href="landing.html" style="color:#007bff;text-decoration:none">← Quay lại trang chủ</a></p>
         <p id="error-msg">Sai email hoặc mật khẩu!</p>
     </div>
 
@@ -48,10 +49,12 @@
             apiKey: "AIzaSyDwvFJXeKPvGi1Wj1RJlm0Pe5UU-eAkVms",
             authDomain: "lockerxmakerspacexhcmute.firebaseapp.com",
             projectId: "lockerxmakerspacexhcmute",
+            databaseURL: "https://lockerxmakerspacexhcmute-default-rtdb.asia-southeast1.firebasedatabase.app"
         };
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
 
+        document.addEventListener('keydown',e=>{if(e.key==='Enter')window.login()});
         window.login = function() {
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
