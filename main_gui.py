@@ -14,6 +14,8 @@ import cv2
 import numpy as np
 import dlib
 import os
+import sync_listener
+sync_listener.start()   # gọi sau khi khởi tạo app, trước mainloop()
 from PIL import Image, ImageTk
 
 # Import các module nội bộ của bạn

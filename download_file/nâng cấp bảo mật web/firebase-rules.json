@@ -1,0 +1,71 @@
+{
+  "rules": {
+    // Chỉ admin đã đăng nhập mới truy cập
+    ".read": "auth != null",
+    ".write": "auth != null",
+    
+    "users": {
+      "$mssv": {
+        ".validate": "newData.hasChildren(['name', 'mssv', 'is_approved'])",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "mssv": {
+          ".validate": "newData.val() === $mssv"
+        },
+        "is_approved": {
+          ".validate": "newData.isNumber() && (newData.val() === 0 || newData.val() === 1)"
+        },
+        "has_face": {
+          ".validate": "newData.isBoolean()"
+        },
+        "rfid": {
+          ".validate": "newData.isString()"
+        },
+        "role": {
+          ".validate": "newData.isString()"
+        }
+      }
+    },
+    
+    "lockers": {
+      "$locker_id": {
+        ".validate": "newData.hasChildren(['status'])",
+        "status": {
+          ".validate": "newData.isString() && (newData.val() === 'empty' || newData.val() === 'occupied')"
+        },
+        "current_mssv": {
+          ".validate": "newData.isString()"
+        },
+        "size": {
+          ".validate": "newData.isString()"
+        },
+        "last_open_time": {
+          ".validate": "newData.isString()"
+        }
+      }
+    },
+    
+    "logs": {
+      "$log_id": {
+        ".validate": "newData.hasChildren(['time', 'event', 'mssv'])",
+        ".write": "!data.exists()",  // Chỉ cho phép tạo mới, không sửa/xóa log
+        "time": {
+          ".validate": "newData.isString()"
+        },
+        "event": {
+          ".validate": "newData.isString()"
+        },
+        "mssv": {
+          ".validate": "newData.isString()"
+        },
+        "name": {
+          ".validate": "newData.isString()"
+        },
+        "locker_id": {
+          ".validate": "newData.isString()"
+        }
+      }
+    }
+  }
+}
