@@ -19,27 +19,51 @@
   --text:#E4E6EB;--text2:#B0B3B8;--text3:#888;
   --primary:#4D94FF;--primary-hover:#3378e0;
 }}
-.ms{font-family:'Material Symbols Rounded';font-weight:normal;font-style:normal;font-size:20px;line-height:1;display:inline-block;white-space:nowrap;direction:ltr;-webkit-font-smoothing:antialiased;font-variation-settings:'FILL' 0,'wght' 300,'GRAD' 0,'opsz' 24;vertical-align:middle}
+.ms{font-family:'Material Symbols Rounded';font-weight:normal;font-style:normal;font-size:20px;
+    line-height:1;display:inline-block;white-space:nowrap;direction:ltr;
+    -webkit-font-smoothing:antialiased;
+    font-variation-settings:'FILL' 0,'wght' 300,'GRAD' 0,'opsz' 24;vertical-align:middle}
 
-body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;
+     align-items:center;justify-content:center;padding:20px}
 
-.card{background:var(--surface);border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.1);padding:40px;width:100%;max-width:440px}
+.card{background:var(--surface);border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.1);
+      padding:40px;width:100%;max-width:440px}
 
 .logo-wrap{text-align:center;margin-bottom:28px}
 .logo-wrap img{width:72px;height:72px;border-radius:12px;object-fit:cover}
 .logo-wrap h1{font-size:1.5rem;margin-top:12px;color:var(--text)}
 .logo-wrap p{color:var(--text3);font-size:.9rem;margin-top:4px}
 
-.form-group{margin-bottom:18px}
+.form-group{margin-bottom:16px}
 label{display:block;font-size:.85rem;font-weight:600;color:var(--text2);margin-bottom:6px}
-input{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:1rem;background:var(--bg);color:var(--text);outline:none;transition:.2s}
+
+.input-wrap{position:relative}
+input{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;
+      font-size:1rem;background:var(--bg);color:var(--text);outline:none;transition:.2s}
 input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,123,255,.12)}
 input.error{border-color:var(--error)}
+input.pw{padding-right:44px}
+
+.toggle-pw{position:absolute;right:12px;top:50%;transform:translateY(-50%);
+           background:none;border:none;cursor:pointer;color:var(--text3);
+           display:flex;align-items:center;padding:0}
+.toggle-pw:hover{color:var(--text)}
+
 .hint{font-size:.78rem;color:var(--text3);margin-top:4px}
 .err-msg{font-size:.8rem;color:var(--error);margin-top:4px;display:none}
 .err-msg.show{display:block}
 
-.btn-submit{width:100%;padding:13px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px}
+/* Strength bar */
+.strength-wrap{margin-top:6px;display:none}
+.strength-wrap.show{display:block}
+.strength-bar{height:4px;border-radius:4px;background:var(--border);overflow:hidden}
+.strength-fill{height:100%;width:0;border-radius:4px;transition:.3s}
+.strength-label{font-size:.75rem;color:var(--text3);margin-top:3px}
+
+.btn-submit{width:100%;padding:13px;background:var(--primary);color:#fff;border:none;
+            border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;transition:.2s;
+            display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px}
 .btn-submit:hover{background:var(--primary-hover)}
 .btn-submit:disabled{opacity:.6;cursor:not-allowed}
 
@@ -48,14 +72,14 @@ input.error{border-color:var(--error)}
 .link-login a{color:var(--primary);text-decoration:none;font-weight:600}
 .link-login a:hover{text-decoration:underline}
 
-/* Success state */
 .success-box{display:none;text-align:center;padding:20px 0}
-.success-box .ms{font-size:56px;color:var(--success);font-variation-settings:'FILL' 1,'wght' 300,'GRAD' 0,'opsz' 48}
+.success-box .ms{font-size:56px;color:var(--success);
+                 font-variation-settings:'FILL' 1,'wght' 300,'GRAD' 0,'opsz' 48}
 .success-box h3{font-size:1.3rem;margin:14px 0 8px;color:var(--text)}
 .success-box p{color:var(--text3);font-size:.95rem;line-height:1.5}
 
-/* Spinner */
-.spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
+.spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.3);
+         border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
@@ -66,11 +90,15 @@ input.error{border-color:var(--error)}
     <img src="logo_web.jpg?v=2" alt="Logo">
     <h1>Smart Locker</h1>
     <p>Đăng ký tài khoản sinh viên</p>
-    <a href="landing.html" style="display:inline-flex;align-items:center;gap:4px;color:var(--primary);font-size:.82rem;text-decoration:none;margin-top:8px"><span class="ms" style="font-size:16px">arrow_back</span> Quay lại trang chủ</a>
+    <a href="landing.html" style="display:inline-flex;align-items:center;gap:4px;
+       color:var(--primary);font-size:.82rem;text-decoration:none;margin-top:8px">
+      <span class="ms" style="font-size:16px">arrow_back</span> Quay lại trang chủ
+    </a>
   </div>
 
   <!-- Form -->
   <div id="form-section">
+
     <div class="form-group">
       <label>MSSV <span style="color:var(--error)">*</span></label>
       <input type="text" id="mssv" placeholder="VD: 22146436" maxlength="20">
@@ -84,10 +112,37 @@ input.error{border-color:var(--error)}
     </div>
 
     <div class="form-group">
-      <label>Email (không bắt buộc)</label>
+      <label>Email <span style="color:var(--error)">*</span></label>
       <input type="email" id="email" placeholder="VD: sv@hcmute.edu.vn">
-      <div class="hint">Dùng để nhận thông báo khi được duyệt</div>
+      <div class="hint">Dùng để nhận thông báo khi tài khoản được duyệt</div>
       <div class="err-msg" id="err-email">Email không hợp lệ</div>
+    </div>
+
+    <div class="form-group">
+      <label>Mật khẩu <span style="color:var(--error)">*</span></label>
+      <div class="input-wrap">
+        <input type="password" id="password" class="pw" placeholder="Tối thiểu 6 ký tự"
+               oninput="checkStrength(this.value)">
+        <button type="button" class="toggle-pw" onclick="togglePw('password',this)">
+          <span class="ms" style="font-size:20px">visibility</span>
+        </button>
+      </div>
+      <div class="strength-wrap" id="strength-wrap">
+        <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
+        <div class="strength-label" id="strength-label"></div>
+      </div>
+      <div class="err-msg" id="err-pw">Mật khẩu tối thiểu 6 ký tự</div>
+    </div>
+
+    <div class="form-group">
+      <label>Xác nhận mật khẩu <span style="color:var(--error)">*</span></label>
+      <div class="input-wrap">
+        <input type="password" id="password2" class="pw" placeholder="Nhập lại mật khẩu">
+        <button type="button" class="toggle-pw" onclick="togglePw('password2',this)">
+          <span class="ms" style="font-size:20px">visibility</span>
+        </button>
+      </div>
+      <div class="err-msg" id="err-pw2">Mật khẩu xác nhận không khớp</div>
     </div>
 
     <button class="btn-submit" id="btn-register" onclick="handleRegister()">
@@ -104,8 +159,11 @@ input.error{border-color:var(--error)}
   <div class="success-box" id="success-section">
     <span class="ms">check_circle</span>
     <h3>Đăng ký thành công!</h3>
-    <p>Tài khoản của bạn đang chờ admin duyệt.<br>Sau khi được duyệt, bạn có thể đến quầy để đăng ký khuôn mặt.</p>
-    <button class="btn-submit" style="margin-top:24px" onclick="window.location.href='user-dashboard.html'">
+    <p>Tài khoản của bạn đang chờ admin duyệt.<br>
+       Bạn sẽ nhận email thông báo khi được duyệt.<br>
+       Sau đó có thể đến quầy để đăng ký khuôn mặt.</p>
+    <button class="btn-submit" style="margin-top:24px"
+            onclick="window.location.href='user-dashboard.html'">
       <span class="ms">open_in_new</span> Xem trạng thái tài khoản
     </button>
   </div>
@@ -124,71 +182,119 @@ const firebaseConfig={
 const app=initializeApp(firebaseConfig);
 const db=getDatabase(app);
 
+// ── SHA-256 (Web Crypto API — không cần thư viện) ──────────────────────────
+async function sha256(str){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+// ── Hiện/ẩn mật khẩu ──────────────────────────────────────────────────────
+window.togglePw=function(id,btn){
+  const inp=document.getElementById(id);
+  const icon=btn.querySelector('.ms');
+  if(inp.type==='password'){inp.type='text';icon.textContent='visibility_off';}
+  else{inp.type='password';icon.textContent='visibility';}
+};
+
+// ── Độ mạnh mật khẩu ──────────────────────────────────────────────────────
+window.checkStrength=function(pw){
+  const wrap=document.getElementById('strength-wrap');
+  const fill=document.getElementById('strength-fill');
+  const lbl =document.getElementById('strength-label');
+  if(!pw){wrap.classList.remove('show');return;}
+  wrap.classList.add('show');
+
+  let score=0;
+  if(pw.length>=6) score++;
+  if(pw.length>=10) score++;
+  if(/[A-Z]/.test(pw)&&/[a-z]/.test(pw)) score++;
+  if(/\d/.test(pw)) score++;
+  if(/[^A-Za-z0-9]/.test(pw)) score++;
+
+  const levels=[
+    {w:'20%',color:'#ef4444',text:'Rất yếu'},
+    {w:'40%',color:'#f97316',text:'Yếu'},
+    {w:'60%',color:'#eab308',text:'Trung bình'},
+    {w:'80%',color:'#22c55e',text:'Mạnh'},
+    {w:'100%',color:'#10b981',text:'Rất mạnh'},
+  ];
+  const l=levels[Math.min(score,4)];
+  fill.style.width=l.w;
+  fill.style.background=l.color;
+  lbl.textContent=l.text;
+  lbl.style.color=l.color;
+};
+
+// ── Validate ───────────────────────────────────────────────────────────────
 function validate(){
   let ok=true;
-  const mssv=document.getElementById('mssv').value.trim();
-  const name=document.getElementById('fullname').value.trim();
-  const email=document.getElementById('email').value.trim();
+  const mssv    =document.getElementById('mssv').value.trim();
+  const name    =document.getElementById('fullname').value.trim();
+  const email   =document.getElementById('email').value.trim();
+  const pw      =document.getElementById('password').value;
+  const pw2     =document.getElementById('password2').value;
 
-  // MSSV
   const mssvOk=/^\d{5,10}$/.test(mssv);
-  document.getElementById('err-mssv').classList.toggle('show',!mssvOk);
-  document.getElementById('mssv').classList.toggle('error',!mssvOk);
-  if(!mssvOk) ok=false;
+  toggle('mssv','err-mssv',!mssvOk); if(!mssvOk) ok=false;
 
-  // Name
   const nameOk=name.length>=3;
-  document.getElementById('err-name').classList.toggle('show',!nameOk);
-  document.getElementById('fullname').classList.toggle('error',!nameOk);
-  if(!nameOk) ok=false;
+  toggle('fullname','err-name',!nameOk); if(!nameOk) ok=false;
 
-  // Email (optional)
-  if(email){
-    const emailOk=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    document.getElementById('err-email').classList.toggle('show',!emailOk);
-    document.getElementById('email').classList.toggle('error',!emailOk);
-    if(!emailOk) ok=false;
-  }
+  const emailOk=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  toggle('email','err-email',!emailOk); if(!emailOk) ok=false;
+
+  const pwOk=pw.length>=6;
+  toggle('password','err-pw',!pwOk); if(!pwOk) ok=false;
+
+  const pw2Ok=pw===pw2;
+  toggle('password2','err-pw2',!pw2Ok); if(!pw2Ok) ok=false;
+
   return ok;
 }
 
+function toggle(inputId,errId,isError){
+  document.getElementById(inputId).classList.toggle('error',isError);
+  document.getElementById(errId).classList.toggle('show',isError);
+}
+
+// ── Submit ─────────────────────────────────────────────────────────────────
 window.handleRegister=async function(){
   if(!validate()) return;
 
-  const mssv=document.getElementById('mssv').value.trim();
-  const name=document.getElementById('fullname').value.trim();
+  const mssv =document.getElementById('mssv').value.trim();
+  const name =document.getElementById('fullname').value.trim();
   const email=document.getElementById('email').value.trim();
+  const pw   =document.getElementById('password').value;
 
-  const btn=document.getElementById('btn-register');
+  const btn    =document.getElementById('btn-register');
   const spinner=document.getElementById('spinner');
   const btnText=document.getElementById('btn-text');
-  btn.disabled=true;
-  spinner.style.display='block';
-  btnText.textContent='Đang xử lý...';
+  btn.disabled=true; spinner.style.display='block'; btnText.textContent='Đang xử lý...';
 
   try{
     // Kiểm tra MSSV đã tồn tại chưa
     const snap=await get(ref(db,`users/${mssv}`));
     if(snap.exists()){
       alert(`MSSV ${mssv} đã được đăng ký trước đó.`);
-      btn.disabled=false;spinner.style.display='none';btnText.textContent='Gửi Đăng Ký';
-      return;
+      reset(); return;
     }
 
-    // Tạo user với is_approved = 0
+    // Hash mật khẩu — KHÔNG lưu plain text lên Firebase
+    const pwHash=await sha256(pw);
+
     await set(ref(db,`users/${mssv}`),{
       mssv,
       name,
-      email: email||'',
-      role:'student',
-      is_approved:0,
-      has_face:false,
+      email,
+      role        :'student',
+      is_approved :0,
+      has_face    :false,
+      password    :pwHash,
       registered_at: new Date().toISOString().slice(0,19).replace('T',' ')
     });
 
-    // Lưu mssv vào localStorage để user-dashboard đọc
-    localStorage.setItem('my_mssv', mssv);
-    localStorage.setItem('my_name', name);
+    localStorage.setItem('my_mssv',mssv);
+    localStorage.setItem('my_name',name);
 
     document.getElementById('form-section').style.display='none';
     document.getElementById('success-section').style.display='block';
@@ -196,16 +302,21 @@ window.handleRegister=async function(){
   }catch(err){
     console.error(err);
     alert('Lỗi kết nối Firebase. Vui lòng thử lại.');
-    btn.disabled=false;spinner.style.display='none';btnText.textContent='Gửi Đăng Ký';
+    reset();
+  }
+
+  function reset(){
+    btn.disabled=false; spinner.style.display='none'; btnText.textContent='Gửi Đăng Ký';
   }
 };
 
-// Clear error on input
-['mssv','fullname','email'].forEach(id=>{
+// ── Clear error on input ───────────────────────────────────────────────────
+const map={mssv:'err-mssv',fullname:'err-name',email:'err-email',
+           password:'err-pw',password2:'err-pw2'};
+Object.entries(map).forEach(([id,errId])=>{
   document.getElementById(id).addEventListener('input',()=>{
     document.getElementById(id).classList.remove('error');
-    const errEl=document.getElementById('err-'+({'mssv':'mssv','fullname':'name','email':'email'}[id]));
-    if(errEl) errEl.classList.remove('show');
+    document.getElementById(errId).classList.remove('show');
   });
 });
 </script>

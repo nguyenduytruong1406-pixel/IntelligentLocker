@@ -140,7 +140,7 @@ h2{font-size:1.2rem}
     </div>
     <div class="table-responsive">
         <table>
-            <thead><tr><th>MSSV</th><th>Tên</th><th>Khuôn Mặt</th><th>Trạng Thái</th><th>Hành Động</th></tr></thead>
+            <thead><tr><th>MSSV</th><th>Tên</th><th>Email</th><th>Khuôn Mặt</th><th>Trạng Thái</th><th>Hành Động</th></tr></thead>
             <tbody id="student-list"></tbody>
         </table>
     </div>
@@ -203,6 +203,8 @@ h2{font-size:1.2rem}
 <div class="user-info-grid">
 <div class="user-info-item"><strong>MSSV</strong><span id="user-detail-mssv">—</span></div>
 <div class="user-info-item"><strong>Tên</strong><span id="user-detail-name">—</span></div>
+<div class="user-info-item"><strong>Email</strong><span id="user-detail-email">—</span></div>
+<div class="user-info-item"><strong>Ngày đăng ký</strong><span id="user-detail-regdate">—</span></div>
 <div class="user-info-item"><strong>Khuôn mặt</strong><span id="user-detail-face">—</span></div>
 <div class="user-info-item"><strong>Trạng thái</strong><span id="user-detail-status">—</span></div>
 </div>
@@ -346,7 +348,7 @@ for(const mssv in data){
     actualNotifCount++;
     notifList.innerHTML+=`<div class="notif-item" onclick="window.viewPendingUser('${mssv}')"><strong>${safeName}</strong> (${mssv})<br><small>Chờ duyệt tài khoản.</small></div>`;
   }
-  _allUsersData.push({mssv,name:safeName,has_face:s.has_face,is_approved:isAppr,role:s.role||'student'});
+  _allUsersData.push({mssv,name:safeName,has_face:s.has_face,is_approved:isAppr,role:s.role||'student',email:s.email||'',registered_at:s.registered_at||''});
 }
 
 const badge=document.getElementById('notif-badge');
@@ -378,6 +380,7 @@ const hasFaceStr=s.has_face?'🟢 Đã có':'🔴 Chưa có';
 tbody.innerHTML+=`<tr>
 <td>${s.mssv}</td>
 <td>${s.name}</td>
+<td style="color:var(--text3);font-size:.9rem">${s.email||'—'}</td>
 <td style="font-weight:bold">${hasFaceStr}</td>
 <td style="color:${s.is_approved?'#28a745':'#dc3545'};font-weight:bold">${s.is_approved?'Đã duyệt':'Chờ duyệt'}</td>
 <td class="action-btns">
@@ -409,6 +412,8 @@ const user=_allUsersData.find(u=>u.mssv===mssv);
 if(!user)return;
 document.getElementById('user-detail-mssv').textContent=mssv;
 document.getElementById('user-detail-name').textContent=user.name;
+document.getElementById('user-detail-email').textContent=user.email||'—';
+document.getElementById('user-detail-regdate').textContent=user.registered_at||'—';
 document.getElementById('user-detail-face').textContent=user.has_face?'Đã có':'Chưa có';
 document.getElementById('user-detail-status').textContent=user.is_approved?'Đã duyệt':'Chờ duyệt';
 document.getElementById('user-detail-role').textContent=user.role;
@@ -530,7 +535,51 @@ const mapped=EVENT_MAP[ev]||{label:`❓ ${ev}`,color:'#888'};
 tbody.innerHTML+=`<tr><td style="color:#666;font-family:monospace">${log.time||'—'}</td><td><strong>${log.mssv||'—'}</strong></td><td>${log.name||'—'}</td><td>${log.locker_id||'—'}</td><td style="color:${mapped.color};font-weight:bold">${mapped.label}</td></tr>`;
 });
 });
+// ========= HÀM XUẤT CSV BỊ THIẾU =========
+function downloadCSV(filename, rows, headers) {
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
 
+window.exportUsers = function() {
+    if (_allUsersData.length === 0) {
+        showToast("❌ Không có dữ liệu để xuất");
+        return;
+    }
+    const headers = ['MSSV', 'Tên', 'Email', 'Khuôn Mặt', 'Trạng Thái', 'Vai Trò'];
+    const rows = _allUsersData.map(s => [
+        s.mssv, 
+        `"${(s.name || '').replace(/"/g, '""')}"`, 
+        `"${s.email || ''}"`,
+        s.has_face ? 'Đã có' : 'Chưa có', 
+        s.is_approved ? 'Đã duyệt' : 'Chờ duyệt', 
+        s.role
+    ]);
+    downloadCSV(`users_${new Date().toISOString().slice(0, 10)}.csv`, rows, headers);
+};
+
+window.exportLogs = function() {
+    const logsArray = Object.values(_logsData || {});
+    if (logsArray.length === 0) {
+        showToast("❌ Không có dữ liệu nhật ký!");
+        return;
+    }
+    const headers = ['Thời Gian', 'MSSV', 'Tên', 'Tủ', 'Sự Kiện'];
+    const rows = logsArray.map(l => [
+        `"${l.time || ''}"`, 
+        l.mssv || '', 
+        `"${(l.name || '').replace(/"/g, '""')}"`, 
+        l.locker_id || '', 
+        l.event || ''
+    ]);
+    downloadCSV(`logs_${new Date().toISOString().slice(0, 10)}.csv`, rows, headers);
+};
+// =========================================
 window.switchTab=function(tabId,el){
 document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
 document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));

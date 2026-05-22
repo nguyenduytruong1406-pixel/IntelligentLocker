@@ -1,111 +1,94 @@
 import sqlite3
 import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import db
+from firebase_admin import credentials, db
 import time
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Kết nối
-# ─────────────────────────────────────────────────────────────────────────────
-conn = None
-try:
-    # 1. Khởi tạo Firebase
+# --- KHỞI TẠO FIREBASE (Chống lỗi gọi 2 lần) ---
+if not firebase_admin._apps:
     cred = credentials.Certificate(r'D:/DATN/Software/test_db_ver1/private_key_lockers.json')
     firebase_admin.initialize_app(cred, {
         'databaseURL': 'https://lockerxmakerspacexhcmute-default-rtdb.asia-southeast1.firebasedatabase.app'
     })
-    print('[Cloud] Connected successfully!')
 
-    # 2. Kết nối SQLite
-    conn = sqlite3.connect(
-        'D:/DATN/Software/test_db_ver1/IntelligentLocker.db',
-        check_same_thread=False
-    )
-    cursor = conn.cursor()
-    print("[Local] Database ready!")
+DB_PATH = r'D:/DATN/Software/test_db_ver1/IntelligentLocker.db'
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Handler: Firebase → SQLite
-# Lắng nghe node /users, đồng bộ xuống bảng Users (không đụng face_embedding)
-# ─────────────────────────────────────────────────────────────────────────────
+def get_conn():
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
 
-    def on_firebase_change(event):
-        print(f"\n[Alert] Firebase thay đổi tại: {event.path}")
+# ── 1. LẮNG NGHE THAY ĐỔI USER ───────────────────────────────────────────────
+def on_user_change(event):
+    if event.path == '/': return
+    mssv = event.path.strip('/').split('/')[0]
 
-        # Bỏ qua sự kiện khởi tạo ban đầu (path="/")
-        if event.path == '/':
-            return
+    user_data = db.reference(f'users/{mssv}').get()
+    
+    # Xử lý: Admin xóa User trên Web
+    if user_data is None:
+        with get_conn() as conn:
+            conn.execute("UPDATE Lockers SET status='empty', current_mssv=NULL WHERE current_mssv=?", (mssv,))
+            conn.execute("DELETE FROM Users WHERE mssv=?", (mssv,))
+        print(f"[Sync] 🗑 Đã xóa user {mssv} và thu hồi tủ (nếu có)")
+        return
 
-        try:
-            # Lấy mssv từ path "/22146436/..." → "22146436"
-            mssv = event.path.strip('/').split('/')[0]
+    name        = user_data.get('name', 'Unknown')
+    is_approved = int(user_data.get('is_approved', 0))
+    email       = user_data.get('email', '')
+    password_fb = user_data.get('password')  # <-- Lấy password từ Web
+    has_face_fb = 1 if user_data.get('has_face') else 0
 
-            # Kéo toàn bộ dữ liệu user từ Firebase
-            user_data = db.reference(f'users/{mssv}').get()
-            print(f"[Debug] Firebase data: {user_data}")
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # Lấy thêm trường password hiện tại ở Local
+        cur.execute("SELECT has_face, password FROM Users WHERE mssv=?", (mssv,))
+        row = cur.fetchone()
 
-            if user_data is None:
-                print(f"[Sync] User {mssv} đã bị xóa khỏi Firebase, bỏ qua.")
-                return
+        if row:
+            merged_has_face = max(row[0] or 0, has_face_fb)
+            current_password = row[1]
+            
+            # Ưu tiên password từ web nếu có, nếu không thì giữ password cũ ở máy Kiosk
+            final_password = password_fb if password_fb else current_password
 
-            name        = user_data.get('name', 'Unknown')
-            is_approved = user_data.get('is_approved', 0)
-            # has_face chỉ đọc từ Firebase, KHÔNG ghi đè nếu đã có embedding local
-            has_face_fb = 1 if user_data.get('has_face') else 0
+            cur.execute(
+                "UPDATE Users SET name=?, is_approved=?, has_face=?, email=?, password=? WHERE mssv=?",
+                (name, is_approved, merged_has_face, email, final_password, mssv)
+            )
+            act = "Cập nhật"
+        else:
+            cur.execute(
+                "INSERT INTO Users (mssv, name, is_approved, has_face, email, password) VALUES (?, ?, ?, ?, ?, ?)",
+                (mssv, name, is_approved, has_face_fb, email, password_fb)
+            )
+            act = "Thêm mới"
+            
+    status_text = "Đã duyệt" if is_approved == 1 else "Chờ duyệt"
+    print(f"[Sync] 👤 {act} User: {name} ({mssv}) | {status_text}")
 
-            # Kiểm tra user đã tồn tại trong SQLite chưa
-            cursor.execute("SELECT mssv, has_face FROM Users WHERE mssv=?", (mssv,))
-            row = cursor.fetchone()
+# ── 2. LẮNG NGHE THAY ĐỔI TỦ (TRẢ TỦ TỪ WEB) ──────────────────────────────────
+def on_locker_change(event):
+    if event.path == '/': return
+    lid = event.path.strip('/').split('/')[0]
 
-            if row:
-                # Đã tồn tại → cập nhật name, is_approved
-                # has_face: lấy giá trị lớn hơn (local embedding > Firebase flag)
-                # để tránh ghi đè mất trạng thái đã đăng ký khuôn mặt
-                current_has_face = row[1] if row[1] is not None else 0
-                merged_has_face  = max(current_has_face, has_face_fb)
+    locker_data = db.reference(f'lockers/{lid}').get()
+    if not locker_data: return
 
-                cursor.execute(
-                    "UPDATE Users SET name=?, is_approved=?, has_face=? WHERE mssv=?",
-                    (name, is_approved, merged_has_face, mssv)
-                )
-                action = "Cập nhật"
-            else:
-                # User mới hoàn toàn → thêm mới (face_embedding để NULL)
-                cursor.execute(
-                    "INSERT INTO Users (mssv, name, is_approved, has_face) "
-                    "VALUES (?, ?, ?, ?)",
-                    (mssv, name, is_approved, has_face_fb)
-                )
-                action = "Thêm mới"
+    status = locker_data.get('status', 'empty').lower()
+    
+    if status == 'empty':
+        with get_conn() as conn:
+            conn.execute("UPDATE Lockers SET status='empty', current_mssv=NULL WHERE locker_id=?", (lid,))
+        print(f"[Sync] 🔓 Trả tủ {lid} (Lệnh từ Web)")
 
-            conn.commit()
+# ── MAIN ──────────────────────────────────────────────────────────────────────
+def start():
+    print("[System] 📡 Đang bật kết nối Websocket Realtime...")
+    db.reference('users').listen(on_user_change)
+    db.reference('lockers').listen(on_locker_change)
 
-            status_text = "Approved" if str(is_approved) == '1' else "Pending/Locked"
-            face_text   = "Có khuôn mặt" if has_face_fb else "Chưa đăng ký"
-            print(f"[Sync] {action} | {name} ({mssv}) | {status_text} | {face_text}")
-
-        except Exception as e:
-            print(f"[Error] Không xử lý được dữ liệu: {e}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Bắt đầu lắng nghe
-# ─────────────────────────────────────────────────────────────────────────────
-
-    users_ref = db.reference('users')
-    print("\n[System] Đang lắng nghe thay đổi từ Cloud... Nhấn Ctrl+C để dừng.")
-
-    listener = users_ref.listen(on_firebase_change)
-
-    while True:
-        time.sleep(1)
-
-except KeyboardInterrupt:
-    print("\n[System] Người dùng dừng chương trình.")
-
-except Exception as e:
-    print(f"[Error] Hệ thống gặp lỗi: {e}")
-
-finally:
-    if conn:
-        conn.close()
-        print("[Local] Đã đóng kết nối SQLite an toàn.")
+if __name__ == "__main__":
+    start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n[System] Dừng lắng nghe.")
