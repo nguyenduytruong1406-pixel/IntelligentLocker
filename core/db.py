@@ -85,4 +85,24 @@ def migrate():
             """)
             print("[db] ✓ Tạo bảng FaceLog")
 
+        # LOCKER_DELETE_LOG — ghi lại mọi lần xóa sinh viên khỏi tủ (local only)
+        if "LOCKER_DELETE_LOG" not in existing_tables:
+            con.execute("""
+                CREATE TABLE LOCKER_DELETE_LOG (
+                    ID          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    MSSV        TEXT NOT NULL,
+                    LOCKER_ID   TEXT NOT NULL,
+                    DELETE_TIME TEXT NOT NULL,
+                    REASON      TEXT NOT NULL
+                )
+            """)
+            print("[db] ✓ Tạo bảng LOCKER_DELETE_LOG")
+
+        # Fix status casing — chuẩn hoá về lowercase (idempotent)
+        con.execute("UPDATE Lockers SET status='empty'    WHERE status='Empty'")
+        con.execute("UPDATE Lockers SET status='occupied' WHERE status='Occupied'")
+
+        # Fix email trailing whitespace
+        con.execute("UPDATE Users SET email = TRIM(email) WHERE email != TRIM(email)")
+
     print(f"[db] ✓ DB ready: {DB_PATH}")

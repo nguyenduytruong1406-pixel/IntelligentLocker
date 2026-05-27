@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 import tkinter as tk
+from tkinter import messagebox
 
 # ── Internal modules ──────────────────────────────────────────────────────────
 from gui.theme import (
@@ -22,9 +23,8 @@ from gui.theme import (
 )
 from hardware.camera import CameraBackend
 from ai.ai_utils import liveness, landmarks, embedding, hash_password
-from core.user_db import get_user_by_password, register_user
-from core.locker_db import open_locker, assign_locker, get_all_lockers
-from core.user_db import get_user, load_all_embeddings, save_embedding
+from core.user_db import get_user_by_password, register_user, get_user, load_all_embeddings, save_embedding
+from core.locker_db import open_locker, assign_locker, get_all_lockers, release_locker, get_user_locker
 from core.log_db import log_access
 
 
@@ -43,6 +43,7 @@ class KioskApp(tk.Tk):
     S_ENROLL_ASK    = "enroll_ask"
     S_ENROLL_FACE   = "enroll_face"
     S_CHOOSE_LOCKER = "choose_locker"
+    S_LOCKER_MENU   = "locker_menu"   # NEW: menu Gửi đồ / Trả tủ
     S_SUCCESS       = "success"
     S_FAIL          = "fail"
 
@@ -64,7 +65,7 @@ class KioskApp(tk.Tk):
         self._enroll_mssv   = None
         self._enroll_frames = []
         self._idle_timer    = time.time()
-        self._warmup_frames = 0   # bỏ qua N frame đầu sau khi camera bật lại
+        self._warmup_frames = 0
 
         self._build_ui()
         self._reload_db()
@@ -90,7 +91,7 @@ class KioskApp(tk.Tk):
         self.lbl_time = tk.Label(hdr, bg=C["surface"], fg=C["muted"], font=f["body"])
         self.lbl_time.place(x=SCREEN_W - 200, y=24)
 
-        # Camera area — placeholder khi idle, canvas khi xác thực
+        # Camera area
         self.placeholder = tk.Frame(
             self, bg=C["surface"], width=CAM_W, height=CAM_H,
             highlightthickness=1, highlightbackground=C["border"],
@@ -169,6 +170,9 @@ class KioskApp(tk.Tk):
         self._build_enroll_ask_frame(self.frame_enroll_ask, pw)
 
         self.frame_locker = tk.Frame(self, bg=C["bg"])
+
+        # NEW: frame menu Gửi đồ / Trả tủ
+        self.frame_locker_menu = tk.Frame(self, bg=C["bg"])
 
     # ── SCREEN BUILDERS ────────────────────────────────────────────────────
 
@@ -294,6 +298,7 @@ class KioskApp(tk.Tk):
         for attr in [
             "frame_idle", "frame_login_choose", "frame_login_pass",
             "frame_register", "frame_enroll_ask", "frame_locker",
+            "frame_locker_menu",
         ]:
             getattr(self, attr).place_forget()
 
@@ -302,12 +307,12 @@ class KioskApp(tk.Tk):
         self._idle_timer = time.time()
         self._hide_all_frames()
 
-        # Camera On-Demand: chỉ bật khi cần xác thực / enroll
+        # Camera On-Demand
         if state in (self.S_VERIFY_FACE, self.S_ENROLL_FACE):
             self.placeholder.place_forget()
             self.cam_canvas.place(x=20, y=85)
             self.cam.start(use_ir=(state == self.S_VERIFY_FACE))
-            self._warmup_frames = 10  # bỏ qua 10 frame đầu (~300ms)
+            self._warmup_frames = 10
         else:
             self.cam.stop()
             self.cam_canvas.place_forget()
@@ -359,7 +364,8 @@ class KioskApp(tk.Tk):
             self._set_progress(0)
 
         elif state == self.S_SUCCESS:
-            self._set_status("✅", f"Chào {self._current_user[1]}!", "Tủ của bạn đã được mở")
+            name = self._current_user[1] if self._current_user else ""
+            self._set_status("✅", f"Chào {name}!", "Tủ của bạn đã được mở")
             self._set_progress(100, C["green"])
             self.after(4000, lambda: self._go(self.S_IDLE))
 
@@ -417,13 +423,18 @@ class KioskApp(tk.Tk):
             self._set_status("👁", "Đang xác thực...", "Không nhận ra — thử lại")
 
     def _after_login(self, mssv: str, name: str):
+        """
+        Sau khi xác thực thành công:
+        - Chưa có tủ  → hiện sơ đồ chọn tủ
+        - Đã có tủ    → hiện menu Gửi đồ / Trả tủ
+        """
         lockers   = get_all_lockers()
         my_locker = next(
-            (l for l, i in lockers.items() if i.get("current_mssv") == mssv), None,
+            (lid for lid, info in lockers.items()
+             if info.get("current_mssv") == mssv), None,
         )
         if my_locker:
-            open_locker(mssv)
-            self._go(self.S_SUCCESS)
+            self._show_locker_menu(mssv, name, my_locker, lockers)
         else:
             self._show_locker_picker(mssv, name, lockers)
 
@@ -458,7 +469,6 @@ class KioskApp(tk.Tk):
         if len(self._enroll_frames) >= ENROLL_FRAMES:
             frames = self._enroll_frames[:]
             mssv   = self._enroll_mssv
-            # Reset ngay để tránh double-trigger
             self._enroll_mssv   = None
             self._enroll_frames = []
             threading.Thread(
@@ -475,9 +485,99 @@ class KioskApp(tk.Tk):
             self.after(3000, lambda: self._go(self.S_IDLE)),
         ))
 
+    # ── LOCKER MENU (Gửi đồ / Trả tủ) ─────────────────────────────────────
+
+    def _show_locker_menu(self, mssv: str, name: str, locker_id: str, lockers: dict):
+        """
+        Sinh viên đã có tủ → hiện 2 lựa chọn:
+          📦 Gửi đồ  → mở tủ (open_locker)
+          🔓 Trả tủ  → giải phóng tủ (release_locker) + xác nhận
+        """
+        self.state = self.S_LOCKER_MENU
+        self._idle_timer = time.time()
+        self._hide_all_frames()
+        self.cam.stop()
+        self.cam_canvas.place_forget()
+        self.placeholder.place(x=20, y=85)
+
+        locker_info = lockers.get(locker_id, {})
+        size_label  = locker_info.get("size", "").capitalize()
+
+        # Xóa nội dung cũ
+        for w in self.frame_locker_menu.winfo_children():
+            w.destroy()
+
+        # Tiêu đề
+        tk.Label(
+            self.frame_locker_menu,
+            text=f"Chào {name}!",
+            bg=C["bg"], fg=C["text"],
+            font=("Segoe UI", 15, "bold"),
+        ).pack(pady=(8, 2))
+
+        tk.Label(
+            self.frame_locker_menu,
+            text=f"Tủ của bạn:  {locker_id}  ({size_label})",
+            bg=C["bg"], fg=C["muted"],
+            font=("Segoe UI", 12),
+        ).pack(pady=(0, 16))
+
+        # Nút Gửi đồ
+        self._make_big_btn(
+            self.frame_locker_menu,
+            "📦  GỬI ĐỒ  (Mở tủ)",
+            C["accent"], "#1a2f5f",
+            lambda: self._do_open_locker(mssv, name, locker_id),
+        ).pack(fill="x", pady=6, ipady=18)
+
+        # Nút Trả tủ
+        self._make_big_btn(
+            self.frame_locker_menu,
+            "🔓  TRẢ TỦ  (Không dùng nữa)",
+            C["red"], "#3b0a0a",
+            lambda: self._confirm_release(mssv, name, locker_id),
+        ).pack(fill="x", pady=6, ipady=18)
+
+        self._make_back_btn(self.frame_locker_menu).pack(fill="x", pady=(10, 0))
+
+        self.frame_locker_menu.place(x=self._px, y=self._base_y, width=self._pw)
+        self._set_status("🗄", f"Tủ {locker_id}", "Chọn hành động")
+        self._set_progress(100, C["green"])
+
+    def _do_open_locker(self, mssv: str, name: str, locker_id: str):
+        """Mở tủ và chuyển sang màn hình thành công."""
+        self._current_user = (mssv, name)
+        ok, msg = open_locker(mssv)
+        if ok:
+            self._go(self.S_SUCCESS)
+        else:
+            messagebox.showerror("Lỗi", f"Không thể mở tủ: {msg}")
+
+    def _confirm_release(self, mssv: str, name: str, locker_id: str):
+        """Xác nhận trước khi trả tủ."""
+        confirmed = messagebox.askyesno(
+            "Xác nhận trả tủ",
+            f"Bạn có chắc muốn trả tủ {locker_id}?\n"
+            "Sau khi trả, tủ sẽ được giải phóng cho người khác.\n\n"
+            "⚠ Hành động này không thể hoàn tác.",
+        )
+        if not confirmed:
+            return
+
+        ok, msg = release_locker(mssv)
+        if ok:
+            messagebox.showinfo(
+                "Đã trả tủ",
+                f"Tủ {locker_id} đã được giải phóng.\nCảm ơn bạn đã sử dụng dịch vụ!",
+            )
+            self._go(self.S_IDLE)
+        else:
+            messagebox.showerror("Lỗi", f"Không thể trả tủ: {msg}")
+
     # ── LOCKER GRID PICKER ─────────────────────────────────────────────────
 
     def _show_locker_picker(self, mssv: str, name: str, lockers: dict):
+        """Sinh viên chưa có tủ → hiện sơ đồ chọn tủ."""
         self._go(self.S_CHOOSE_LOCKER)
         for w in self.frame_locker.winfo_children():
             w.destroy()
@@ -491,13 +591,13 @@ class KioskApp(tk.Tk):
         for i in range(6):
             grid.columnconfigure(i, weight=1)
 
-        # Sơ đồ vật lý: (locker_id, row, col, colspan, type)
+        # Sơ đồ vật lý
         layout = [
             {"id": 1, "r": 0, "c": 0, "w": 2, "t": "small"},
             {"id": 2, "r": 0, "c": 2, "w": 2, "t": "small"},
             {"id": 3, "r": 0, "c": 4, "w": 2, "t": "small"},
             {"id": 4, "r": 1, "c": 0, "w": 2, "t": "small"},
-            {"id": 0, "r": 1, "c": 2, "w": 2, "t": "ctrl"},   # Main Controller
+            {"id": 0, "r": 1, "c": 2, "w": 2, "t": "ctrl"},
             {"id": 5, "r": 1, "c": 4, "w": 2, "t": "small"},
             {"id": 6, "r": 2, "c": 0, "w": 3, "t": "large"},
             {"id": 7, "r": 2, "c": 3, "w": 3, "t": "large"},
@@ -527,6 +627,7 @@ class KioskApp(tk.Tk):
             def _on_pick(l=lid):
                 assign_locker(mssv, l)
                 open_locker(mssv)
+                self._current_user = (mssv, name)
                 self._go(self.S_SUCCESS)
 
             tk.Button(
@@ -554,8 +655,8 @@ class KioskApp(tk.Tk):
     # ── MAIN LOOP ──────────────────────────────────────────────────────────
 
     def _loop(self):
-        # Auto-idle timeout
-        if (self.state not in (self.S_IDLE, self.S_SUCCESS)
+        # Auto-idle timeout (không timeout ở màn hình locker_menu để tránh mất lựa chọn)
+        if (self.state not in (self.S_IDLE, self.S_SUCCESS, self.S_LOCKER_MENU)
                 and time.time() - self._idle_timer > IDLE_TIMEOUT):
             self._go(self.S_IDLE)
 
@@ -565,15 +666,13 @@ class KioskApp(tk.Tk):
                 self._warmup_frames -= 1
                 self.after(30, self._loop)
                 return
-            
-            # Giữ nguyên bản frame gốc từ camera không qua bộ lọc biến đổi màu
+
             frame = color.copy()
 
             if self.state == self.S_VERIFY_FACE:
                 self._on_verify_frame(frame, ir)
                 shape, det = landmarks(frame)
                 if shape:
-                    # Đồng bộ đúng mã màu landmark từ main_gui
                     hex_c = "#22c55e" if self._consec >= VERIFY_FRAMES - 1 else "#ef4444"
                     self._draw_landmarks(frame, shape, det, hex_c)
 
@@ -594,10 +693,11 @@ class KioskApp(tk.Tk):
                 self._cam_img = self.cam_canvas.create_image(0, 0, anchor="nw", image=img)
             else:
                 self.cam_canvas.itemconfig(self._cam_img, image=img)
-            self.cam_canvas.image = img 
+            self.cam_canvas.image = img
 
         self.lbl_time.config(text=time.strftime("%H:%M  %d/%m/%Y"))
         self.after(30, self._loop)
+
     # ── UI HELPERS ─────────────────────────────────────────────────────────
 
     def _set_status(self, icon: str, title: str, sub: str = ""):
@@ -622,7 +722,7 @@ class KioskApp(tk.Tk):
         return (best_mssv, best_name) if best_dist < THRESHOLD else (None, None)
 
     def _draw_landmarks(self, frame, shape, det, hex_color: str):
-        """Vẽ 68 landmark points + bounding box lên frame (giống main_gui.py cũ)."""
+        """Vẽ 68 landmark points + bounding box lên frame."""
         c = hex_color.lstrip("#")
         bgr = tuple(int(c[i:i+2], 16) for i in (4, 2, 0))
         for i in range(68):

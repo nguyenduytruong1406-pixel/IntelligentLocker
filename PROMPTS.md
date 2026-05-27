@@ -83,5 +83,19 @@ Trả về danh sách ngắn, không rewrite toàn bộ.
 
 [paste code]
 ```
+
+---
+
 ## 📊 Kiểm tra dung lượng
+
+```
 Đánh giá độ dài ngữ cảnh cuộc trò chuyện hiện tại. Đã đến mức quá tải và cần tóm tắt chưa? Chỉ trả lời "Cần backup ngay" hoặc "Chưa cần".
+```
+
+---
+
+## ⚠️ Cảnh báo token (dán đầu chat khi làm task nặng)
+
+```
+Trước khi thực hiện bất kỳ tác vụ nào, ước tính lượng token sẽ tiêu thụ. Nếu tác vụ có khả năng vượt giới hạn tài khoản free (context dài, nhiều file, nhiều bước), hãy cảnh báo trước và đề xuất cách chia nhỏ hoặc tối ưu để tiết kiệm token.
+```

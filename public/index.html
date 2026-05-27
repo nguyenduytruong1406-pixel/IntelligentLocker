@@ -52,6 +52,9 @@ th{background-color:var(--table-th);color:var(--table-th-text)}
 .locker-box{background:var(--locker-empty-bg);border:2px solid var(--locker-empty-border);color:var(--locker-empty-text);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:1.2rem;font-weight:bold;cursor:pointer;transition:.2s}
 .locker-box:hover{transform:scale(1.05);box-shadow:0 4px 10px rgba(0,0,0,.1)}
 .locker-box small{font-size:.85rem;margin-top:5px;font-weight:normal}
+.locker-box .idle-tag{font-size:.75rem;margin-top:3px;font-weight:600;padding:2px 6px;border-radius:8px;display:inline-block}
+.idle-warn{background:#fff3cd;color:#856404}
+.idle-danger{background:#f8d7da;color:#721c24}
 .locker-box.occupied{background:var(--locker-occ-bg);border-color:var(--locker-occ-border);color:var(--locker-occ-text)}
 .box-small{grid-column:span 2;height:110px}.box-large{grid-column:span 3;height:160px}
 .control-box{grid-column:span 2;height:110px;background:linear-gradient(135deg,#1e3c72,#2a5298);color:white;border:2px solid #fff;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:1.1rem;font-weight:bold;box-shadow:0 4px 15px rgba(0,0,0,.3);text-align:center;cursor:pointer;transition:.2s}
@@ -109,6 +112,7 @@ h2{font-size:1.2rem}
 <li class="nav-item" id="nav-users" onclick="switchTab('tab-users',this)"><span class="nav-icon ms">group</span><span class="nav-text">Sinh Viên</span></li>
 <li class="nav-item" onclick="switchTab('tab-lockers',this)"><span class="nav-icon ms">inventory_2</span><span class="nav-text">Tủ Khóa</span></li>
 <li class="nav-item" id="nav-logs" onclick="switchTab('tab-logs',this)"><span class="nav-icon ms">receipt_long</span><span class="nav-text">Nhật Ký</span><span class="badge" id="log-badge">0</span></li>
+<li class="nav-item" id="nav-delete-log" onclick="switchTab('tab-delete-log',this)"><span class="nav-icon ms">delete_history</span><span class="nav-text">Lịch Sử Tủ</span></li>
 </ul>
 </div>
 <div class="sidebar-bottom">
@@ -161,6 +165,23 @@ h2{font-size:1.2rem}
         </table>
     </div>
 </div>
+
+<div id="tab-delete-log" class="tab-content">
+    <div class="section-header">
+        <h3>Lịch Sử Thu Hồi Tủ</h3>
+        <button class="btn-export" onclick="exportDeleteLogs()"><span class="ms" style="font-size:16px;vertical-align:middle">download</span> Xuất CSV</button>
+    </div>
+    <div class="search-box" style="margin-top:12px">
+        <span class="ms">search</span>
+        <input type="text" id="delete-log-search" placeholder="Tìm MSSV hoặc tủ..." oninput="filterDeleteLogs()">
+    </div>
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>Thời Gian</th><th>MSSV</th><th>Tủ</th><th>Lý Do</th></tr></thead>
+            <tbody id="delete-log-list"><tr><td colspan="4" style="text-align:center;color:var(--text4);padding:20px">Đang tải...</td></tr></tbody>
+        </table>
+    </div>
+</div>
 </main>
 
 <aside class="right-bar">
@@ -192,7 +213,9 @@ h2{font-size:1.2rem}
 <h3 id="modal-title">Tủ 01</h3>
 <div class="modal-detail-row"><strong>Trạng Thái:</strong><span id="modal-status">Trống</span></div>
 <div class="modal-detail-row"><strong>Người Dùng:</strong><span id="modal-user">—</span></div>
+<div class="modal-detail-row"><strong>Gán tủ từ:</strong><span id="modal-assigned-date">—</span></div>
 <div class="modal-detail-row"><strong>Lần Mở Cuối:</strong><span id="modal-time">—</span></div>
+<div class="modal-detail-row"><strong>Số Ngày Idle:</strong><span id="modal-idle">—</span></div>
 </div>
 </div>
 
@@ -437,7 +460,7 @@ window.confirmAssignLocker=function(){
 const mssv=document.getElementById('assign-mssv').textContent;
 const lockerId=document.getElementById('locker-select').value;
 if(!lockerId){showToast('❌ Vui lòng chọn tủ');return}
-update(ref(db,`lockers/${lockerId}`),{status:'occupied',current_mssv:mssv,last_open_time:new Date().toLocaleString('vi-VN')})
+update(ref(db,`lockers/${lockerId}`),{status:'occupied',current_mssv:mssv,last_open_time:new Date().toLocaleString('vi-VN'),assigned_date:new Date().toLocaleString('vi-VN')})
 .then(()=>{
 showToast(`✅ Đã gán tủ ${lockerId} cho ${mssv}`);
 document.getElementById('assignModal').style.display='none';
@@ -449,7 +472,7 @@ window.releaseUserLocker=function(mssv){
 const userLocker=Object.values(_lockersData).find(l=>l.current_mssv===mssv);
 if(!userLocker){showToast('❌ Sinh viên này không mượn tủ nào');return}
 if(!confirm(`Xác nhận trả tủ ${userLocker.locker_id}?`))return;
-update(ref(db,`lockers/${userLocker.locker_id}`),{status:'empty',current_mssv:""})
+update(ref(db,`lockers/${userLocker.locker_id}`),{status:'empty',current_mssv:"",assigned_date:""})
 .then(()=>{
 showToast(`✅ Đã trả tủ ${userLocker.locker_id}`);
 document.getElementById('userModal').style.display='none';
@@ -464,6 +487,27 @@ const gridLayout=[
 {id:8,type:'large'},{id:9,type:'large'}
 ];
 window.lockerDataGlobal={};
+
+// Tính số ngày idle từ last_open_time
+function calcIdleDays(lastOpenTime){
+  if(!lastOpenTime||lastOpenTime==='—') return null;
+  // Hỗ trợ cả ISO (2026-05-27T10:30:00) và locale VN (27/5/2026, 10:30:00)
+  let d=new Date(lastOpenTime);
+  if(isNaN(d.getTime())){
+    // thử parse định dạng VN: "27/5/2026, 10:30:00"
+    const parts=lastOpenTime.replace(',','').split(/[\s\/]+/);
+    if(parts.length>=3) d=new Date(`${parts[2]}-${String(parts[1]).padStart(2,'0')}-${String(parts[0]).padStart(2,'0')}T${parts[3]||'00:00:00'}`);
+  }
+  if(isNaN(d.getTime())) return null;
+  return Math.floor((Date.now()-d.getTime())/(1000*60*60*24));
+}
+
+function idleTag(days, isOcc){
+  if(!isOcc||days===null) return '';
+  if(days>=7) return `<span class="idle-tag idle-danger">🔴 ${days} ngày idle</span>`;
+  if(days>=5) return `<span class="idle-tag idle-warn">🟡 ${days} ngày idle</span>`;
+  return `<span style="font-size:.75rem;color:var(--text4)">${days} ngày</span>`;
+}
 
 onValue(ref(db,'lockers'),(snapshot)=>{
 const lockerGrid=document.getElementById('locker-grid');
@@ -486,14 +530,20 @@ return;
 const i=item.id;
 const key=`L${String(i).padStart(2,'0')}`;
 const info=data[key]||{};
-const status=info.status||'empty';
+const status=(info.status||'empty').toLowerCase();
 const mssv=info.current_mssv||'Trống';
 const lastOpen=info.last_open_time||'—';
+const assignedDate=info.assigned_date||'—';
 const isOcc=status==='occupied';
+const idleDays=calcIdleDays(lastOpen);
 const boxClass=item.type==='small'?'box-small':'box-large';
 if(isOcc)usedCount++;else freeCount++;
-window.lockerDataGlobal[i]={status:isOcc?'Đang sử dụng':'Đang trống',mssv,lastOpen,color:isOcc?'#dc3545':'#28a745',locker_id:key};
-lockerGrid.innerHTML+=`<div class="locker-box ${boxClass} ${isOcc?'occupied':''}" onclick="window.openLockerModal(${i})">Tủ ${key}<small>${isOcc?'🔴 Đang dùng':'🟢 Trống'}</small></div>`;
+window.lockerDataGlobal[i]={status:isOcc?'Đang sử dụng':'Đang trống',mssv,lastOpen,assignedDate,idleDays,color:isOcc?'#dc3545':'#28a745',locker_id:key};
+lockerGrid.innerHTML+=`<div class="locker-box ${boxClass} ${isOcc?'occupied':''}" onclick="window.openLockerModal(${i})">
+  Tủ ${key}
+  <small>${isOcc?'🔴 '+mssv:'🟢 Trống'}</small>
+  ${idleTag(idleDays, isOcc)}
+</div>`;
 });
 
 document.querySelector('#stat-lockers-free .stat-value').textContent=freeCount;
@@ -508,7 +558,19 @@ document.getElementById('modal-title').innerText=`Tủ ${key}`;
 const ss=document.getElementById('modal-status');
 ss.innerText=d.status;ss.style.color=d.color;ss.style.fontWeight='bold';
 document.getElementById('modal-user').innerText=d.mssv!=='Trống'?d.mssv:'Không có';
+document.getElementById('modal-assigned-date').innerText=d.assignedDate||'—';
 document.getElementById('modal-time').innerText=d.lastOpen!=='—'?d.lastOpen:'--:--';
+// Idle days
+const idleEl=document.getElementById('modal-idle');
+if(d.idleDays===null||!d.status.includes('Đang sử dụng')){
+  idleEl.innerText='—';idleEl.style.color='';idleEl.style.fontWeight='';
+}else if(d.idleDays>=7){
+  idleEl.innerText=`${d.idleDays} ngày ⚠️ Có thể thu hồi`;idleEl.style.color='#dc3545';idleEl.style.fontWeight='bold';
+}else if(d.idleDays>=5){
+  idleEl.innerText=`${d.idleDays} ngày ⚡ Sắp đến hạn`;idleEl.style.color='#856404';idleEl.style.fontWeight='bold';
+}else{
+  idleEl.innerText=`${d.idleDays} ngày`;idleEl.style.color='#28a745';idleEl.style.fontWeight='normal';
+}
 document.getElementById('lockerModal').style.display='flex';
 };
 
@@ -580,6 +642,54 @@ window.exportLogs = function() {
     downloadCSV(`logs_${new Date().toISOString().slice(0, 10)}.csv`, rows, headers);
 };
 // =========================================
+// ── LOCKER DELETE LOG ─────────────────────────────────────────────────────────
+const _reasonMap={
+  'student_release':'✅ Sinh viên tự trả',
+  'auto_inactive_7days':'🕐 Hệ thống (7 ngày idle)',
+  'admin_force':'🔒 Admin ép trả',
+  'admin_deactivate':'👤 Vô hiệu hóa tài khoản'
+};
+let _allDeleteLogs=[];
+
+onValue(ref(db,'locker_delete_logs'),(snapshot)=>{
+  const data=snapshot.val()||{};
+  _allDeleteLogs=Object.values(data).sort((a,b)=>(b.delete_time||'').localeCompare(a.delete_time||''));
+  _renderDeleteLogs(_allDeleteLogs);
+});
+
+function _renderDeleteLogs(logs){
+  const tbody=document.getElementById('delete-log-list');
+  if(!tbody)return;
+  if(!logs||logs.length===0){
+    tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--text4);padding:20px">Chưa có dữ liệu</td></tr>';
+    return;
+  }
+  tbody.innerHTML=logs.map(l=>`<tr>
+    <td>${l.delete_time||'—'}</td>
+    <td><strong>${l.mssv||'—'}</strong></td>
+    <td style="font-weight:bold">${l.locker_id||'—'}</td>
+    <td>${_reasonMap[l.reason]||l.reason||'—'}</td>
+  </tr>`).join('');
+}
+
+window.filterDeleteLogs=function(){
+  const val=document.getElementById('delete-log-search').value.toLowerCase();
+  _renderDeleteLogs(!val?_allDeleteLogs:_allDeleteLogs.filter(l=>
+    (l.mssv||'').toLowerCase().includes(val)||(l.locker_id||'').toLowerCase().includes(val)
+  ));
+};
+
+window.exportDeleteLogs=function(){
+  if(!_allDeleteLogs.length){showToast('❌ Không có dữ liệu để xuất');return;}
+  const headers=['Thời Gian','MSSV','Tủ','Lý Do'];
+  const rows=_allDeleteLogs.map(l=>[
+    l.delete_time||'',l.mssv||'',l.locker_id||'',
+    _reasonMap[l.reason]||l.reason||''
+  ]);
+  downloadCSV(`locker_delete_log_${new Date().toISOString().slice(0,10)}.csv`,rows,headers);
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 window.switchTab=function(tabId,el){
 document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
 document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
