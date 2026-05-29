@@ -258,14 +258,16 @@ LOCKER_DELETE_LOG (
 /locker_delete_logs/{push_id}    → mssv, locker_id, delete_time, reason
 ```
 
-### Security Rules (FINAL)
+### Security Rules (FINAL — cập nhật 28/05/2026)
 ```json
 {
   "rules": {
     "users": {
-      ".read": true,
+      ".read": "auth != null",
+      ".write": "auth != null",
       "$mssv": {
-        ".write": "!data.exists() || auth != null"
+        ".read": true,
+        ".write": "auth != null"
       }
     },
     "lockers": {
@@ -279,15 +281,23 @@ LOCKER_DELETE_LOG (
     "locker_delete_logs": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "release_requests": {
+      ".read": "auth != null",
+      "$mssv": {
+        ".read": "auth != null",
+        ".write": true
+      }
     }
   }
 }
 ```
 
 **Giải thích:**
-- `/users` — ai cũng đọc được (tra cứu, dashboard); chỉ tạo mới khi chưa login, sửa/xóa cần auth
+- `users` cấp cha: `auth != null` để admin đọc toàn bộ danh sách; `$mssv`: `true` để sinh viên tra cứu từng người không cần đăng nhập
 - `/lockers` — ai cũng đọc được; chỉ admin ghi
 - `/logs` — chỉ admin đọc/ghi
+- `/release_requests` — sinh viên ghi được (gửi yêu cầu trả tủ); chỉ admin đọc được
 - `/locker_delete_logs` — chỉ admin đọc/ghi; Python push khi trả tủ (student_release / auto_inactive_7days / admin_force / admin_deactivate)
 
 ### Firebase Sync — 2 chiều
@@ -608,3 +618,94 @@ Web Admin Nhật Ký Tủ
     View all LOCKER_DELETE_LOG entries
     Lọc / xuất CSV
 ```
+
+---
+
+## 🔄 Changelog Web Admin — 28/05/2026
+
+### Mục tiêu
+1. Thêm **xóa thẻ sinh viên thủ công** từ bảng Sinh Viên
+2. Thêm **tự động xóa thẻ chờ duyệt quá hạn** (auto-expire)
+3. Tập trung toàn bộ cấu hình ngưỡng ngày vào **một modal Cài Đặt duy nhất**
+4. Loại bỏ hardcode `5` / `7` ngày — tất cả đọc từ config động
+
+### Thay đổi trong `index.html`
+
+#### Tính năng mới — Xóa thẻ thủ công
+- Thêm nút **🗑️ Xóa** (màu hồng) vào mỗi hàng trong bảng Sinh Viên
+- Có confirm dialog trước khi xóa
+- Nếu sinh viên đang mượn tủ → tự động trả tủ trước khi xóa
+- Ghi vào `/locker_delete_logs` với `reason: admin_delete_card`
+- Xóa node `users/{mssv}` khỏi Firebase
+
+#### Tính năng mới — Auto-expire thẻ chờ duyệt
+- Thẻ có `is_approved: false` quá N ngày (tính từ `registered_at`) → tự động xóa
+- Chạy mỗi lần load trang và lặp lại mỗi 1 giờ (`setInterval`)
+- Ghi log với `reason: auto_expired_pending`
+- N ngày cấu hình được qua modal Cài Đặt (xem bên dưới)
+
+#### Modal Cài Đặt tập trung (`#settingsModal`)
+Thay thế thanh cấu hình inline trước đây, truy cập qua icon ⚙️ trên right-bar:
+
+| Cài đặt | Mặc định | Mô tả |
+|---|---|---|
+| Cảnh báo idle sau | 5 ngày | Tủ không mở quá N ngày → tag vàng 🟡 |
+| Tự động thu hồi tủ sau | 7 ngày | Tủ idle quá N ngày → tag đỏ 🔴, có thể thu hồi |
+| Tự xóa thẻ chờ duyệt sau | 7 ngày | Thẻ pending quá N ngày → auto-xóa |
+
+- Lưu vào `localStorage` (`cfg_idle_warn`, `cfg_idle_auto`, `cfg_expire_days`)
+- Validation: cảnh báo idle phải nhỏ hơn ngày thu hồi
+- Áp dụng ngay lập tức sau khi lưu (không cần reload)
+
+#### Cập nhật `_reasonMap`
+Thêm 2 lý do mới hiển thị trong tab **Lịch Sử Tủ**:
+- `admin_delete_card` → 🗑️ Admin xóa thẻ thủ công
+- `auto_expired_pending` → ⏳ Hết hạn chờ duyệt (tự động)
+
+#### Refactor logic idle (không còn hardcode)
+- `idleTag()` — dùng `_cfg.idleWarn` / `_cfg.idleAuto` thay vì `5` / `7`
+- `openLockerModal()` — dùng `_cfg.idleAuto` / `_cfg.idleWarn` thay vì `7` / `5`
+- Firebase import bổ sung: `remove`, `push`
+
+### Những gì đã bỏ
+- Nút "🗑️ Xóa thẻ" trong modal chi tiết sinh viên (tránh dư thừa — giữ nút ngoài bảng)
+- Thanh cấu hình `auto-expire-bar` inline trên tab Sinh Viên
+---
+
+## 🔄 Changelog Web — 28/05/2026 (phiên 2)
+
+### `user-dashboard.html` — Nâng cấp trang tra cứu sinh viên
+
+#### Tính năng mới
+- **Thanh cảnh báo idle** hiển thị ngay dưới thông tin tủ với 3 mức:
+  - 🟢 Xanh: bình thường — "còn N ngày trước ngưỡng cảnh báo"
+  - 🟡 Vàng: sắp đến hạn — "tủ bị thu hồi sau N ngày nữa"
+  - 🔴 Đỏ: quá hạn — "có thể bị thu hồi bất kỳ lúc nào"
+  - Progress bar trực quan theo % idle / ngưỡng tự động
+  - Ngưỡng đọc từ `localStorage` (`cfg_idle_warn`, `cfg_idle_auto`) — khớp với cài đặt admin
+- **Chip "Chờ duyệt" hiện số ngày đã chờ** — "Chờ admin duyệt · N ngày"
+- **Nút "Yêu cầu trả tủ"** — chỉ hiện khi đang có tủ:
+  - Ghi vào Firebase `/release_requests/{mssv}` với `status: pending`
+  - Nếu đã gửi → nút disable, hiện "Đã gửi — chờ admin xử lý"
+  - Có modal xác nhận mật khẩu trước khi gửi (mật khẩu là password tài khoản sinh viên, hash SHA-256 so sánh với `user.password` trong Firebase)
+
+#### Bug fix
+- Fix crash khi tra cứu MSSV có tủ: `onValue(ref(db,'lockers'))` không có try/catch → throw exception do Firebase rules → cả hàm `lookup()` crash im lặng
+- Fix `_currentMssv` / `_currentLockerId` / `_currentUserPassword` khai báo sau khi auto-fill gọi `lookup()` → `ReferenceError` (hoisting issue trong ES module)
+- Fix auto-fill từ `localStorage` gọi `lookup()` trước khi hàm được định nghĩa → chuyển khối auto-fill xuống sau `window.lookup=lookup`
+- Fix `is_approved` check: hỗ trợ cả `1`, `'1'`, `true`, `'true'`
+- Bỏ step 3 "Chưa có tủ — liên hệ admin" khỏi phần hướng dẫn (chỉ hiện khi đã có tủ)
+
+### `index.html` — Admin Dashboard
+
+#### Tính năng mới
+- **Tab "Trả Tủ"** (sidebar icon `logout`):
+  - Badge đỏ hiện số yêu cầu đang chờ xử lý
+  - Bảng danh sách: MSSV, tủ, thời gian gửi, trạng thái (⏳ / ✅)
+  - Hàng đang chờ được tô vàng nhạt
+  - Nút **"Xác nhận trả"** → giải phóng tủ + ghi `locker_delete_logs` (reason: `student_release`) + đánh dấu request `status: done`
+- Firebase listeners (`onValue users/lockers/logs/locker_delete_logs/release_requests`) được bọc trong `startDataListeners()` — chỉ gọi sau khi `onAuthStateChanged` xác nhận đã đăng nhập, tránh race condition với Firebase rules `auth != null`
+
+#### Bug fix
+- Fix admin không đọc được dữ liệu sau khi thêm Firebase rules: `onValue` chạy trước khi auth token sẵn sàng
+- Fix `_reasonMap` / `_allDeleteLogs` bị kẹt trong scope `startDataListeners()` → `ReferenceError` trong `_renderDeleteLogs`

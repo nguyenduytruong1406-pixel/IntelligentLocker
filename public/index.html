@@ -84,6 +84,14 @@ th{background-color:var(--table-th);color:var(--table-th-text)}
 .user-info-item{padding:10px;background:var(--nav-hover-bg);border-radius:6px}
 .user-info-item strong{display:block;font-size:.85rem;color:var(--text3);margin-bottom:4px}
 .user-info-item span{font-size:1.05rem;color:var(--text)}
+.btn-delete{background-color:#e83e8c}.btn-delete:hover{background-color:#c82069}
+.settings-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border2);gap:12px}
+.settings-row:last-child{border-bottom:none}
+.settings-label{display:flex;flex-direction:column;gap:3px;flex:1}
+.settings-label span{font-weight:600;color:var(--text);font-size:.95rem}
+.settings-label small{color:var(--text4);font-size:.8rem}
+.settings-control{display:flex;align-items:center;gap:6px;white-space:nowrap;color:var(--text3);font-size:.9rem}
+.settings-control input[type=number]{width:65px;padding:5px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--surface);color:var(--text);font-size:.9rem;text-align:center}
 @media screen and (max-width:768px){
 .mobile-menu-btn{display:flex;align-items:center;justify-content:center}
 .sidebar{position:fixed;height:100%;left:-260px;top:0;width:260px!important;box-shadow:2px 0 15px rgba(0,0,0,0.3)}.sidebar.mobile-open{left:0}
@@ -113,6 +121,7 @@ h2{font-size:1.2rem}
 <li class="nav-item" onclick="switchTab('tab-lockers',this)"><span class="nav-icon ms">inventory_2</span><span class="nav-text">Tủ Khóa</span></li>
 <li class="nav-item" id="nav-logs" onclick="switchTab('tab-logs',this)"><span class="nav-icon ms">receipt_long</span><span class="nav-text">Nhật Ký</span><span class="badge" id="log-badge">0</span></li>
 <li class="nav-item" id="nav-delete-log" onclick="switchTab('tab-delete-log',this)"><span class="nav-icon ms">delete_history</span><span class="nav-text">Lịch Sử Tủ</span></li>
+<li class="nav-item" id="nav-release" onclick="switchTab('tab-release',this)"><span class="nav-icon ms">logout</span><span class="nav-text">Trả Tủ</span><span class="badge" id="release-badge" style="display:none">0</span></li>
 </ul>
 </div>
 <div class="sidebar-bottom">
@@ -182,6 +191,17 @@ h2{font-size:1.2rem}
         </table>
     </div>
 </div>
+<div id="tab-release" class="tab-content">
+    <div class="section-header">
+        <h3>Yêu Cầu Trả Tủ</h3>
+    </div>
+    <div class="table-responsive" style="margin-top:12px">
+        <table>
+            <thead><tr><th>MSSV</th><th>Tủ</th><th>Thời Gian Gửi</th><th>Trạng Thái</th><th>Xử Lý</th></tr></thead>
+            <tbody id="release-list"><tr><td colspan="5" style="text-align:center;color:var(--text4);padding:20px">Đang tải...</td></tr></tbody>
+        </table>
+    </div>
+</div>
 </main>
 
 <aside class="right-bar">
@@ -203,6 +223,7 @@ h2{font-size:1.2rem}
                 <div class="theme-option" id="opt-system" onclick="setTheme('system')"><span class="ms" style="font-size:18px">devices</span> Mặc định thiết bị <span class="check">✓</span></div>
             </div>
         </div>
+        <button class="icon-btn" onclick="openSettingsModal()" title="Cài đặt"><span class="ms">settings</span></button>
         <button class="icon-btn" onclick="window.logout()" title="Đăng xuất"><span class="ms">logout</span></button>
     </div>
 </aside>
@@ -233,7 +254,7 @@ h2{font-size:1.2rem}
 </div>
 <div class="modal-detail-row"><strong>Tủ đang mượn:</strong><span id="user-detail-locker">Không có</span></div>
 <div class="modal-detail-row"><strong>Vai trò:</strong><span id="user-detail-role">student</span></div>
-<div style="margin-top:15px;display:flex;gap:10px">
+<div style="margin-top:15px;display:flex;gap:10px;flex-wrap:wrap">
 <button class="btn btn-assign" onclick="openAssignModal(window._currentUserMSSV)">Gán tủ</button>
 <button class="btn btn-lock" onclick="releaseUserLocker(window._currentUserMSSV)">Trả tủ</button>
 </div>
@@ -260,9 +281,61 @@ h2{font-size:1.2rem}
 
 <div id="toast"></div>
 
+<!-- MODAL CÀI ĐẶT -->
+<div class="modal" id="settingsModal">
+<div class="modal-content modal-wide">
+<span class="close-btn" onclick="document.getElementById('settingsModal').style.display='none'">✕</span>
+<h3 style="margin-bottom:18px;display:flex;align-items:center;gap:8px"><span class="ms filled" style="color:var(--primary)">settings</span> Cài Đặt Hệ Thống</h3>
+
+<div style="display:flex;flex-direction:column;gap:0">
+
+  <!-- Nhóm: Tủ Khóa -->
+  <div style="font-size:.8rem;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">🗄️ Tủ Khóa</div>
+  <div class="settings-row">
+    <div class="settings-label">
+      <span>Cảnh báo idle sau</span>
+      <small>Tủ đang dùng không mở quá N ngày → hiện tag vàng</small>
+    </div>
+    <div class="settings-control">
+      <input type="number" id="cfg-idle-warn" min="1" max="365" value="5"> <span>ngày</span>
+    </div>
+  </div>
+  <div class="settings-row">
+    <div class="settings-label">
+      <span>Tự động thu hồi tủ sau</span>
+      <small>Tủ idle quá N ngày → hiện tag đỏ, có thể thu hồi</small>
+    </div>
+    <div class="settings-control">
+      <input type="number" id="cfg-idle-auto" min="1" max="365" value="7"> <span>ngày</span>
+    </div>
+  </div>
+
+  <hr style="border:none;border-top:1px solid var(--border2);margin:14px 0">
+
+  <!-- Nhóm: Thẻ Sinh Viên -->
+  <div style="font-size:.8rem;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">🪪 Thẻ Sinh Viên</div>
+  <div class="settings-row">
+    <div class="settings-label">
+      <span>Tự xóa thẻ chờ duyệt sau</span>
+      <small>Thẻ chưa được duyệt sau N ngày sẽ bị xóa tự động</small>
+    </div>
+    <div class="settings-control">
+      <input type="number" id="cfg-expire-days" min="1" max="365" value="7"> <span>ngày</span>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end">
+  <button class="btn" style="background:var(--text4)" onclick="document.getElementById('settingsModal').style.display='none'">Hủy</button>
+  <button class="btn btn-approve" onclick="saveSettings()">💾 Lưu cài đặt</button>
+</div>
+</div>
+</div>
+
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-import{getDatabase,ref,onValue,update,query,limitToLast}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
+import{getDatabase,ref,onValue,update,remove,push,query,limitToLast}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
 import{getAuth,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 
 const firebaseConfig={
@@ -275,8 +348,16 @@ const app=initializeApp(firebaseConfig);
 const db=getDatabase(app);
 const auth=getAuth(app);
 
+let _listenersStarted=false;
 onAuthStateChanged(auth,(user)=>{
-if(user){console.log("Đăng nhập: "+user.email);requestNotifPermission()}
+if(user){
+  console.log("Đăng nhập: "+user.email);
+  requestNotifPermission();
+  if(!_listenersStarted){
+    _listenersStarted=true;
+    startDataListeners();
+  }
+}
 else{window.location.replace("landing.html")}
 });
 window.logout=()=>signOut(auth).then(()=>window.location.replace("landing.html"));
@@ -341,6 +422,17 @@ function clearBadge(){document.getElementById('log-badge').classList.remove('vis
 
 let _usersData={},_lockersData={},_allUsersData=[];
 
+const _reasonMap={
+  'student_release':'✅ Sinh viên tự trả',
+  'auto_inactive_7days':'🕐 Hệ thống (7 ngày idle)',
+  'admin_force':'🔒 Admin ép trả',
+  'admin_deactivate':'👤 Vô hiệu hóa tài khoản',
+  'admin_delete_card':'🗑️ Admin xóa thẻ thủ công',
+  'auto_expired_pending':'⏳ Hết hạn chờ duyệt (tự động)'
+};
+let _allDeleteLogs=[];
+
+function startDataListeners(){
 onValue(ref(db,'users'),(snapshot)=>{
 const data=snapshot.val()||{};
 const tbody=document.getElementById('student-list');
@@ -409,6 +501,7 @@ tbody.innerHTML+=`<tr>
 <td class="action-btns">
 <button class="btn btn-info btn-sm" onclick="openUserDetail('${s.mssv}')">Chi tiết</button>
 <button class="btn ${s.is_approved?'btn-lock':'btn-approve'} btn-sm" onclick="window.toggleStatus('${s.mssv}',${s.is_approved?0:1})">${s.is_approved?'Khóa thẻ':'Duyệt thẻ'}</button>
+<button class="btn btn-delete btn-sm" onclick="window.deleteUserCard('${s.mssv}')">🗑️ Xóa</button>
 </td>
 </tr>`;
 });
@@ -427,6 +520,96 @@ console.error("Lỗi Duyệt Thẻ:",error);
 alert(`❌ KHÔNG THỂ DUYỆT THẺ!\n\nLỗi: ${error.message}`);
 });
 };
+
+// ── XÓA THẺ THỦ CÔNG ──────────────────────────────────────────────────────────
+
+window.deleteUserCard=function(mssv){
+  if(!mssv)return;
+  const user=_allUsersData.find(u=>u.mssv===mssv);
+  const name=user?user.name:mssv;
+  if(!confirm(`⚠️ Xác nhận XÓA THẺ của sinh viên:\n${name} (${mssv})\n\nHành động này sẽ xóa tài khoản khỏi hệ thống!`))return;
+  // Trả tủ nếu đang mượn
+  const userLocker=Object.values(_lockersData).find(l=>l.current_mssv===mssv);
+  const releasePromise=userLocker
+    ?update(ref(db,`lockers/${userLocker.locker_id}`),{status:'empty',current_mssv:'',assigned_date:''})
+    :Promise.resolve();
+  releasePromise.then(()=>{
+    // Ghi log xóa
+    const logEntry={
+      delete_time:new Date().toLocaleString('vi-VN'),
+      mssv,
+      locker_id:userLocker?userLocker.locker_id:'—',
+      reason:'admin_delete_card'
+    };
+    return push(ref(db,'locker_delete_logs'),logEntry);
+  }).then(()=>{
+    // Xóa user khỏi Firebase
+    return remove(ref(db,`users/${mssv}`));
+  }).then(()=>{
+    document.getElementById('userModal').style.display='none';
+    showToast(`🗑️ Đã xóa thẻ sinh viên: ${mssv}`);
+  }).catch(err=>{console.error(err);showToast('❌ Lỗi xóa thẻ: '+err.message)});
+};
+
+// ── CÀI ĐẶT TẬP TRUNG ────────────────────────────────────────────────────────
+let _cfg={
+  idleWarn:  parseInt(localStorage.getItem('cfg_idle_warn') ||'5',10),
+  idleAuto:  parseInt(localStorage.getItem('cfg_idle_auto') ||'7',10),
+  expireDays:parseInt(localStorage.getItem('cfg_expire_days')||'7',10)
+};
+
+window.openSettingsModal=function(){
+  document.getElementById('cfg-idle-warn').value  =_cfg.idleWarn;
+  document.getElementById('cfg-idle-auto').value  =_cfg.idleAuto;
+  document.getElementById('cfg-expire-days').value=_cfg.expireDays;
+  document.getElementById('settingsModal').style.display='flex';
+};
+
+window.saveSettings=function(){
+  const w=parseInt(document.getElementById('cfg-idle-warn').value,10);
+  const a=parseInt(document.getElementById('cfg-idle-auto').value,10);
+  const e=parseInt(document.getElementById('cfg-expire-days').value,10);
+  if(!w||!a||!e||w<1||a<1||e<1){showToast('❌ Giá trị không hợp lệ');return;}
+  if(w>=a){showToast('❌ Cảnh báo phải nhỏ hơn ngày thu hồi');return;}
+  _cfg={idleWarn:w,idleAuto:a,expireDays:e};
+  localStorage.setItem('cfg_idle_warn', w);
+  localStorage.setItem('cfg_idle_auto', a);
+  localStorage.setItem('cfg_expire_days',e);
+  document.getElementById('settingsModal').style.display='none';
+  showToast(`✅ Đã lưu cài đặt`);
+  autoExpirePendingCards();
+};
+
+function autoExpirePendingCards(){
+  const now=Date.now();
+  _allUsersData.forEach(u=>{
+    if(u.is_approved)return;
+    if(!u.registered_at)return;
+    let regDate=new Date(u.registered_at);
+    if(isNaN(regDate.getTime())){
+      const p=u.registered_at.replace(',','').split(/[\s\/]+/);
+      if(p.length>=3)regDate=new Date(`${p[2]}-${String(p[1]).padStart(2,'0')}-${String(p[0]).padStart(2,'0')}T${p[3]||'00:00:00'}`);
+    }
+    if(isNaN(regDate.getTime()))return;
+    const daysPending=Math.floor((now-regDate.getTime())/(1000*60*60*24));
+    if(daysPending>=_cfg.expireDays){
+      const userLocker=Object.values(_lockersData).find(l=>l.current_mssv===u.mssv);
+      const releaseP=userLocker
+        ?update(ref(db,`lockers/${userLocker.locker_id}`),{status:'empty',current_mssv:'',assigned_date:''})
+        :Promise.resolve();
+      releaseP.then(()=>push(ref(db,'locker_delete_logs'),{
+        delete_time:new Date().toLocaleString('vi-VN'),
+        mssv:u.mssv,
+        locker_id:userLocker?userLocker.locker_id:'—',
+        reason:'auto_expired_pending'
+      })).then(()=>remove(ref(db,`users/${u.mssv}`)))
+      .then(()=>showToast(`⏳ Đã tự xóa thẻ quá hạn: ${u.mssv} (${daysPending} ngày)`))
+      .catch(err=>console.error('Auto-expire lỗi:',err));
+    }
+  });
+}
+autoExpirePendingCards();
+setInterval(autoExpirePendingCards,60*60*1000);
 
 window._currentUserMSSV='';
 window.openUserDetail=function(mssv){
@@ -504,8 +687,8 @@ function calcIdleDays(lastOpenTime){
 
 function idleTag(days, isOcc){
   if(!isOcc||days===null) return '';
-  if(days>=7) return `<span class="idle-tag idle-danger">🔴 ${days} ngày idle</span>`;
-  if(days>=5) return `<span class="idle-tag idle-warn">🟡 ${days} ngày idle</span>`;
+  if(days>=_cfg.idleAuto) return `<span class="idle-tag idle-danger">🔴 ${days} ngày idle</span>`;
+  if(days>=_cfg.idleWarn) return `<span class="idle-tag idle-warn">🟡 ${days} ngày idle</span>`;
   return `<span style="font-size:.75rem;color:var(--text4)">${days} ngày</span>`;
 }
 
@@ -564,9 +747,9 @@ document.getElementById('modal-time').innerText=d.lastOpen!=='—'?d.lastOpen:'-
 const idleEl=document.getElementById('modal-idle');
 if(d.idleDays===null||!d.status.includes('Đang sử dụng')){
   idleEl.innerText='—';idleEl.style.color='';idleEl.style.fontWeight='';
-}else if(d.idleDays>=7){
+}else if(d.idleDays>=_cfg.idleAuto){
   idleEl.innerText=`${d.idleDays} ngày ⚠️ Có thể thu hồi`;idleEl.style.color='#dc3545';idleEl.style.fontWeight='bold';
-}else if(d.idleDays>=5){
+}else if(d.idleDays>=_cfg.idleWarn){
   idleEl.innerText=`${d.idleDays} ngày ⚡ Sắp đến hạn`;idleEl.style.color='#856404';idleEl.style.fontWeight='bold';
 }else{
   idleEl.innerText=`${d.idleDays} ngày`;idleEl.style.color='#28a745';idleEl.style.fontWeight='normal';
@@ -643,19 +826,38 @@ window.exportLogs = function() {
 };
 // =========================================
 // ── LOCKER DELETE LOG ─────────────────────────────────────────────────────────
-const _reasonMap={
-  'student_release':'✅ Sinh viên tự trả',
-  'auto_inactive_7days':'🕐 Hệ thống (7 ngày idle)',
-  'admin_force':'🔒 Admin ép trả',
-  'admin_deactivate':'👤 Vô hiệu hóa tài khoản'
-};
-let _allDeleteLogs=[];
+// _reasonMap và _allDeleteLogs khai báo ở ngoài
 
 onValue(ref(db,'locker_delete_logs'),(snapshot)=>{
   const data=snapshot.val()||{};
   _allDeleteLogs=Object.values(data).sort((a,b)=>(b.delete_time||'').localeCompare(a.delete_time||''));
   _renderDeleteLogs(_allDeleteLogs);
 });
+
+// Release requests
+onValue(ref(db,'release_requests'),(snapshot)=>{
+  const data=snapshot.val()||{};
+  const tbody=document.getElementById('release-list');
+  if(!tbody) return;
+  const entries=Object.values(data).filter(r=>r&&r.mssv);
+  const pending=entries.filter(r=>r.status==='pending');
+  const badge=document.getElementById('release-badge');
+  if(pending.length>0){badge.textContent=pending.length;badge.style.display='';}
+  else{badge.style.display='none';}
+  if(!entries.length){
+    tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text4);padding:20px">Chưa có yêu cầu nào</td></tr>';
+    return;
+  }
+  tbody.innerHTML=entries.sort((a,b)=>(b.requested_at||'').localeCompare(a.requested_at||'')).map(r=>`
+    <tr style="${r.status==='pending'?'background:rgba(255,193,7,.08)':''}">
+      <td><strong>${r.mssv||'—'}</strong></td>
+      <td style="font-weight:bold">${r.locker_id||'—'}</td>
+      <td>${r.requested_at||'—'}</td>
+      <td><span style="color:${r.status==='pending'?'var(--warning)':'var(--success)'};font-weight:600">${r.status==='pending'?'⏳ Chờ xử lý':'✅ Đã xử lý'}</span></td>
+      <td>${r.status==='pending'?`<button onclick="handleRelease('${r.mssv}','${r.locker_id}')" style="padding:5px 12px;background:var(--error);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:600">Xác nhận trả</button>`:'—'}</td>
+    </tr>`).join('');
+});
+};
 
 function _renderDeleteLogs(logs){
   const tbody=document.getElementById('delete-log-list');
@@ -718,6 +920,26 @@ window.viewPendingUser = function(mssv) {
 };
 
 window.toggleSidebar=function(){document.getElementById('sidebar').classList.toggle('collapsed')};
+
+window.handleRelease=async function(mssv,lockerId){
+  if(!confirm(`Xác nhận trả tủ ${lockerId} cho sinh viên ${mssv}?
+Thao tác này sẽ giải phóng tủ và đánh dấu yêu cầu đã xử lý.`)) return;
+  try{
+    // Giải phóng tủ
+    await update(ref(db,`lockers/${lockerId}`),{status:'empty',current_mssv:'',assigned_date:''});
+    // Ghi log
+    await push(ref(db,'locker_delete_logs'),{
+      mssv,locker_id:lockerId,
+      delete_time:new Date().toLocaleString('vi-VN'),
+      reason:'student_release'
+    });
+    // Đánh dấu yêu cầu đã xử lý
+    await update(ref(db,`release_requests/${mssv}`),{status:'done',processed_at:new Date().toLocaleString('vi-VN')});
+    alert('✅ Đã xử lý trả tủ thành công!');
+  }catch(e){
+    alert('❌ Lỗi: '+e.message);
+  }
+};
 </script>
 </body>
 </html>

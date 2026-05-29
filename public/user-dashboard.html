@@ -108,6 +108,44 @@ body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-
 
 .register-link{text-align:center;margin-top:20px;font-size:.9rem;color:var(--text3)}
 .register-link a{color:var(--primary);text-decoration:none;font-weight:600}
+
+/* Idle warning bar */
+.idle-bar{border-radius:10px;padding:12px 16px;margin-top:14px;display:none;align-items:flex-start;gap:10px;font-size:.88rem;line-height:1.5}
+.idle-bar.warn{background:#fff8e1;border:1px solid #ffe082;color:#5d4037;display:flex}
+.idle-bar.danger{background:#fdecea;border:1px solid #f48fb1;color:#b71c1c;display:flex}
+.idle-bar.safe{background:#e8f5e9;border:1px solid #a5d6a7;color:#1b5e20;display:flex}
+@media(prefers-color-scheme:dark){
+  .idle-bar.warn{background:#3d2e00;border-color:#b8860b;color:#ffe082}
+  .idle-bar.danger{background:#3b0a0a;border-color:#c62828;color:#ef9a9a}
+  .idle-bar.safe{background:#0d2e12;border-color:#388e3c;color:#a5d6a7}
+}
+.idle-bar-icon{font-size:20px;flex-shrink:0;margin-top:1px}
+.idle-progress-wrap{margin-top:8px;background:rgba(0,0,0,.1);border-radius:4px;height:6px;overflow:hidden}
+.idle-progress-bar{height:6px;border-radius:4px;transition:width .5s}
+
+/* Nút yêu cầu trả tủ */
+.btn-release{width:100%;margin-top:14px;padding:11px;background:transparent;border:2px solid var(--error);color:var(--error);border-radius:10px;font-size:.93rem;font-weight:600;cursor:pointer;display:none;align-items:center;justify-content:center;gap:7px;transition:.2s}
+.btn-release:hover{background:var(--error);color:#fff}
+.btn-release.show{display:flex}
+.btn-release:disabled{opacity:.5;cursor:not-allowed}
+
+/* Password modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.show{display:flex}
+.modal-box{background:var(--surface);border-radius:16px;padding:28px 24px;width:100%;max-width:360px;box-shadow:0 8px 40px rgba(0,0,0,.25)}
+.modal-box h3{font-size:1.05rem;font-weight:700;margin-bottom:6px;color:var(--text)}
+.modal-box p{font-size:.87rem;color:var(--text2);margin-bottom:18px}
+.modal-input{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:.95rem;outline:none;margin-bottom:12px}
+.modal-input:focus{border-color:var(--primary)}
+.modal-err{color:var(--error);font-size:.83rem;margin-bottom:10px;display:none}
+.modal-err.show{display:block}
+.modal-actions{display:flex;gap:10px}
+.modal-actions button{flex:1;padding:10px;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;border:none;transition:.2s}
+.btn-cancel-modal{background:var(--bg);color:var(--text2);border:1.5px solid var(--border)!important}
+.btn-confirm-modal{background:var(--error);color:#fff}
+.btn-confirm-modal:hover{opacity:.85}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:#323232;color:#fff;padding:11px 20px;border-radius:8px;font-size:.88rem;opacity:0;transition:opacity .3s,transform .3s;z-index:999;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
@@ -167,6 +205,22 @@ body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-
       </div>
     </div>
 
+    <!-- Idle warning -->
+    <div class="idle-bar" id="idle-bar">
+      <span class="ms filled idle-bar-icon" id="idle-icon">info</span>
+      <div style="flex:1">
+        <div id="idle-msg"></div>
+        <div class="idle-progress-wrap" id="idle-progress-wrap" style="display:none">
+          <div class="idle-progress-bar" id="idle-progress-bar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nút yêu cầu trả tủ -->
+    <button class="btn-release" id="btn-release" onclick="requestRelease()">
+      <span class="ms">logout</span> Yêu cầu trả tủ
+    </button>
+
     <!-- Log mini -->
     <div style="margin-top:20px">
       <div class="section-title">Lịch sử gần đây</div>
@@ -183,11 +237,26 @@ body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-
   </div>
 
   <div class="register-link">Chưa có tài khoản? <a href="register.html">Đăng ký tại đây</a></div>
+</div><!-- end container -->
+<!-- Password modal for release request -->
+<div class="modal-overlay" id="release-modal">
+  <div class="modal-box">
+    <h3><span class="ms" style="vertical-align:middle;margin-right:6px;color:var(--error)">lock</span>Xác nhận yêu cầu trả tủ</h3>
+    <p>Nhập mật khẩu để gửi yêu cầu trả tủ <strong id="modal-locker-id"></strong>.</p>
+    <input class="modal-input" type="password" id="release-password" placeholder="Nhập mật khẩu" maxlength="50"
+      onkeydown="if(event.key==='Enter')confirmRelease()">
+    <div class="modal-err" id="modal-err">❌ Mật khẩu không đúng</div>
+    <div class="modal-actions">
+      <button class="btn-cancel-modal" onclick="closeReleaseModal()">Huỷ</button>
+      <button class="btn-confirm-modal" onclick="confirmRelease()"><span class="ms" style="font-size:16px;vertical-align:middle">send</span> Gửi yêu cầu</button>
+    </div>
+  </div>
 </div>
+<div id="toast"></div>
 
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-import{getDatabase,ref,get,query,orderByChild,equalTo,limitToLast}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
+import{getDatabase,ref,get,set,remove,query,limitToLast}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
 
 const firebaseConfig={
   apiKey:"AIzaSyDwvFJXeKPvGi1Wj1RJlm0Pe5UU-eAkVms",
@@ -204,91 +273,211 @@ const EVENT_LABEL={
   'RELEASE_LOCKER':'Trả tủ'
 };
 
-// Auto-fill từ localStorage nếu vừa đăng ký
-const savedMssv=localStorage.getItem('my_mssv');
-if(savedMssv){
-  document.getElementById('mssv-input').value=savedMssv;
-  lookup();
+// Ngưỡng idle — đọc từ localStorage (admin cài đặt), fallback mặc định
+const IDLE_WARN = parseInt(localStorage.getItem('cfg_idle_warn')||'5',10);
+const IDLE_AUTO = parseInt(localStorage.getItem('cfg_idle_auto')||'7',10);
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>t.classList.remove('show'),3500);
 }
+
+function parseDate(str){
+  if(!str||str==='—') return null;
+  let d=new Date(str);
+  if(isNaN(d.getTime())){
+    const p=str.replace(',','').split(/[\s\/]+/);
+    if(p.length>=3) d=new Date(`${p[2]}-${String(p[1]).padStart(2,'0')}-${String(p[0]).padStart(2,'0')}T${p[3]||'00:00:00'}`);
+  }
+  return isNaN(d.getTime())?null:d;
+}
+
+function calcDays(str){
+  const d=parseDate(str);
+  if(!d) return null;
+  return Math.floor((Date.now()-d.getTime())/(1000*60*60*24));
+}
+
+let _currentMssv='';
+let _currentLockerId='';
+let _currentUserPassword='';
 
 async function lookup(){
   const mssv=document.getElementById('mssv-input').value.trim();
   if(!mssv) return;
+  _currentMssv=mssv;
+  _currentLockerId='';
 
   document.getElementById('not-found').classList.remove('show');
   document.getElementById('info-card').classList.remove('show');
 
-  // Lấy user
-  const userSnap=await get(ref(db,`users/${mssv}`));
-  if(!userSnap.exists()){
+  let userSnap;
+  try{
+    userSnap=await get(ref(db,`users/${mssv}`));
+  }catch(e){
+    document.getElementById('not-found').innerHTML=`<span class="ms">error_outline</span> Lỗi kết nối Firebase: ${e.message}`;
+    document.getElementById('not-found').classList.add('show');
+    return;
+  }
+  if(!userSnap||!userSnap.exists()){
+    document.getElementById('not-found').innerHTML=`<span class="ms">error_outline</span> Không tìm thấy MSSV này. <a href="register.html" style="color:var(--primary);font-weight:600;margin-left:4px">Đăng ký ngay</a>`;
     document.getElementById('not-found').classList.add('show');
     return;
   }
   const user=userSnap.val();
+  if(!user||typeof user!=='object'){
+    document.getElementById('not-found').innerHTML=`<span class="ms">error_outline</span> Dữ liệu tài khoản bị lỗi, liên hệ admin.`;
+    document.getElementById('not-found').classList.add('show');
+    return;
+  }
+
+  // Lưu password hash để xác thực trả tủ
+  _currentUserPassword=user.password||'';
 
   // Avatar
   document.getElementById('avatar-letter').textContent=(user.name||'?')[0].toUpperCase();
   document.getElementById('user-name').textContent=user.name||'—';
   document.getElementById('user-mssv').textContent=`MSSV: ${mssv}`;
 
-  // Chips
+  // Chips — thêm số ngày chờ nếu chưa duyệt
   const chips=document.getElementById('status-chips');
-  const approved=String(user.is_approved)==='1';
+  const approved=user.is_approved===1||user.is_approved==='1'||user.is_approved===true||user.is_approved==='true';
   const hasFace=!!user.has_face;
+  let pendingDaysHtml='';
+  if(!approved&&user.registered_at){
+    const days=calcDays(user.registered_at);
+    if(days!==null) pendingDaysHtml=`<span style="opacity:.75;font-weight:400"> · ${days} ngày</span>`;
+  }
   chips.innerHTML=`
     <span class="chip ${approved?'approved':'pending'}">
       <span class="ms" style="font-size:14px">${approved?'check_circle':'hourglass_empty'}</span>
-      ${approved?'Đã được duyệt':'Chờ admin duyệt'}
+      ${approved?'Đã được duyệt':'Chờ admin duyệt'}${pendingDaysHtml}
     </span>
     <span class="chip ${hasFace?'face-yes':'face-no'}">
       <span class="ms" style="font-size:14px">${hasFace?'face':'face_retouching_off'}</span>
       ${hasFace?'Đã đăng ký khuôn mặt':'Chưa có khuôn mặt'}
     </span>`;
 
-  // Locker
-  const lockersSnap=await get(ref(db,'lockers'));
+  // Locker — bọc try/catch riêng, lỗi quyền đọc không crash cả lookup
   let myLocker=null;
-  let myLockerId=null;
-  if(lockersSnap.exists()){
-    const lockers=lockersSnap.val();
-    for(const lid in lockers){
-      if(lockers[lid].current_mssv===mssv){
-        myLocker=lockers[lid];myLockerId=lid;break;
+  let lockerReadErr=null;
+  try{
+    // Ưu tiên đọc thẳng bằng locker_id lưu trong user nếu có
+    if(user.locker_id){
+      const directSnap=await get(ref(db,`lockers/${user.locker_id}`));
+      if(directSnap.exists()){
+        const l=directSnap.val();
+        if(l.current_mssv===mssv){ myLocker=l; _currentLockerId=user.locker_id; }
       }
     }
+    // Nếu chưa tìm được, quét toàn bộ /lockers
+    if(!myLocker){
+      const lockersSnap=await get(ref(db,'lockers'));
+      if(lockersSnap.exists()){
+        const lockers=lockersSnap.val();
+        for(const lid in lockers){
+          if(lockers[lid].current_mssv===mssv){
+            myLocker=lockers[lid]; _currentLockerId=lid; break;
+          }
+        }
+      }
+    }
+  }catch(e){
+    lockerReadErr=e.message;
   }
 
   const lockerCard=document.getElementById('locker-card');
   const lockerIcon=document.getElementById('locker-icon');
+  const idleBar=document.getElementById('idle-bar');
+  const btnRelease=document.getElementById('btn-release');
+
+  // Reset
+  idleBar.className='idle-bar';
+  btnRelease.classList.remove('show');
+  btnRelease.disabled=false;
+
+  if(lockerReadErr&&!myLocker){
+    // Không đọc được /lockers nhưng vẫn hiển thị thông tin user
+    document.getElementById('locker-name').textContent='Không đọc được thông tin tủ';
+    document.getElementById('locker-size').textContent='Lỗi quyền truy cập Firebase — liên hệ admin';
+  }
+
   if(myLocker){
     lockerCard.classList.add('occupied');
     lockerIcon.classList.add('occupied');
     lockerIcon.textContent='lock';
-    document.getElementById('locker-name').textContent=`Tủ ${myLockerId}`;
+    document.getElementById('locker-name').textContent=`Tủ ${_currentLockerId}`;
     document.getElementById('locker-size').textContent=myLocker.size==='small'?'Loại nhỏ':'Loại lớn';
     if(myLocker.last_open_time){
       document.getElementById('last-open').style.display='flex';
       document.getElementById('last-open-time').textContent='Mở lần cuối: '+myLocker.last_open_time;
     }
+
+    // Tính idle và hiển thị cảnh báo
+    const idleDays=calcDays(myLocker.last_open_time);
+    if(idleDays!==null){
+      const remaining=IDLE_AUTO-idleDays;
+      const pct=Math.min(100,Math.round((idleDays/IDLE_AUTO)*100));
+      const progressWrap=document.getElementById('idle-progress-wrap');
+      const progressBar=document.getElementById('idle-progress-bar');
+      const idleMsg=document.getElementById('idle-msg');
+      const idleIcon=document.getElementById('idle-icon');
+
+      progressWrap.style.display='block';
+      progressBar.style.width=pct+'%';
+
+      if(idleDays>=IDLE_AUTO){
+        idleBar.classList.add('danger');
+        idleIcon.textContent='warning';
+        progressBar.style.background='#e53935';
+        idleMsg.innerHTML=`<strong>⚠️ Tủ có thể bị thu hồi bất kỳ lúc nào!</strong><br>Bạn chưa mở tủ trong <strong>${idleDays} ngày</strong>. Hãy đến sử dụng hoặc trả tủ ngay.`;
+      } else if(idleDays>=IDLE_WARN){
+        idleBar.classList.add('warn');
+        idleIcon.textContent='schedule';
+        progressBar.style.background='#fb8c00';
+        idleMsg.innerHTML=`<strong>🟡 Sắp đến hạn idle!</strong><br>Bạn chưa mở tủ trong <strong>${idleDays} ngày</strong>. Tủ sẽ bị thu hồi sau <strong>${remaining} ngày</strong> nữa nếu không sử dụng.`;
+      } else {
+        idleBar.classList.add('safe');
+        idleIcon.textContent='check_circle';
+        progressBar.style.background='#43a047';
+        idleMsg.innerHTML=`Tủ đang hoạt động bình thường. Chưa mở <strong>${idleDays} ngày</strong> — còn <strong>${remaining} ngày</strong> trước ngưỡng cảnh báo.`;
+      }
+    }
+
+    // Kiểm tra đã có request trả tủ chưa
+    try{
+      const reqSnap=await get(ref(db,`release_requests/${mssv}`));
+      if(reqSnap.exists()&&reqSnap.val().status==='pending'){
+        _showCancelState(btnRelease);
+      } else {
+        _showRequestState(btnRelease);
+      }
+    }catch(e){
+      // Không đọc được release_requests — vẫn hiện nút bình thường
+      _showRequestState(btnRelease);
+    }
+
   } else {
     lockerCard.classList.remove('occupied');
     lockerIcon.classList.remove('occupied');
     lockerIcon.textContent='lock_open';
     document.getElementById('locker-name').textContent='Chưa được gán tủ';
     document.getElementById('locker-size').textContent='Liên hệ admin để được cấp tủ';
+    document.getElementById('last-open').style.display='none';
   }
 
-  // Logs — chỉ đọc được nếu có auth, không block nếu lỗi
+  // Logs
   const logList=document.getElementById('log-list');
   try{
     const logsSnap=await get(query(ref(db,'logs'),limitToLast(100)));
     logList.innerHTML='';
     let count=0;
     if(logsSnap.exists()){
-      const allLogs=logsSnap.val();
-      const myLogs=Object.values(allLogs)
+      const myLogs=Object.values(logsSnap.val())
         .filter(l=>l.mssv===mssv)
-        .sort((a,b)=>b.time.localeCompare(a.time))
+        .sort((a,b)=>(b.time||'').localeCompare(a.time||''))
         .slice(0,5);
       if(myLogs.length){
         myLogs.forEach(l=>{
@@ -324,14 +513,109 @@ async function lookup(){
       <div class="step-num ${step2done?'done':''}"><span class="ms filled" style="font-size:14px">${step2done?'check':'looks_two'}</span></div>
       <div class="step-text">${step2done?'✅ Đã đăng ký khuôn mặt':'📸 Đến quầy để đăng ký khuôn mặt với nhân viên'}</div>
     </div>
-    <div class="step">
-      <div class="step-num ${step3done?'done':''}"><span class="ms filled" style="font-size:14px">${step3done?'check':'looks_3'}</span></div>
-      <div class="step-text">${step3done?`✅ Đã được gán tủ ${myLockerId}`:'🗃️ Nhân viên sẽ gán tủ cho bạn sau khi hoàn thành bước 2'}</div>
-    </div>`;
+    ${step3done?`<div class="step">
+      <div class="step-num done"><span class="ms filled" style="font-size:14px">check</span></div>
+      <div class="step-text">✅ Đã được gán tủ ${_currentLockerId}</div>
+    </div>`:''}`;
 
   document.getElementById('info-card').classList.add('show');
-};
+}
 window.lookup=lookup;
+
+// Auto-fill từ localStorage nếu vừa đăng ký
+const savedMssv=localStorage.getItem('my_mssv');
+if(savedMssv){
+  document.getElementById('mssv-input').value=savedMssv;
+  lookup();
+}
+
+// Hash SHA-256 của chuỗi nhập vào
+async function sha256(str){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+// ── Helpers trạng thái nút trả tủ ─────────────────────────────────────────
+function _showRequestState(btn){
+  btn.classList.add('show');
+  btn.disabled=false;
+  btn.style.cssText='';                       // xoá inline style nếu có
+  btn.innerHTML=`<span class="ms">logout</span> Yêu cầu trả tủ`;
+  btn.onclick=requestRelease;
+}
+
+function _showCancelState(btn){
+  btn.classList.add('show');
+  btn.disabled=false;
+  // Đổi màu sang warning để phân biệt
+  btn.style.borderColor='var(--warning)';
+  btn.style.color='var(--warning)';
+  btn.innerHTML=`<span class="ms">hourglass_empty</span> Đã gửi yêu cầu &nbsp;·&nbsp; <u>Hủy yêu cầu</u>`;
+  btn.onclick=cancelRelease;
+}
+
+// Mở modal yêu cầu trả tủ
+window.requestRelease=function(){
+  if(!_currentMssv||!_currentLockerId) return;
+  document.getElementById('modal-locker-id').textContent=_currentLockerId;
+  document.getElementById('release-password').value='';
+  document.getElementById('modal-err').classList.remove('show');
+  document.getElementById('release-modal').classList.add('show');
+  setTimeout(()=>document.getElementById('release-password').focus(),100);
+};
+
+window.closeReleaseModal=function(){
+  document.getElementById('release-modal').classList.remove('show');
+};
+
+// Đóng modal khi click ra ngoài
+document.getElementById('release-modal').addEventListener('click',function(e){
+  if(e.target===this) closeReleaseModal();
+});
+
+window.confirmRelease=async function(){
+  const pwd=document.getElementById('release-password').value;
+  const hashed=await sha256(pwd);
+  if(hashed!==_currentUserPassword){
+    document.getElementById('modal-err').classList.add('show');
+    document.getElementById('release-password').select();
+    return;
+  }
+  closeReleaseModal();
+  if(!confirm(`Xác nhận gửi yêu cầu trả tủ ${_currentLockerId}?\nAdmin sẽ xử lý và liên hệ bạn.`)) return;
+  const btn=document.getElementById('btn-release');
+  btn.disabled=true;
+  try{
+    await set(ref(db,`release_requests/${_currentMssv}`),{
+      mssv:_currentMssv,
+      locker_id:_currentLockerId,
+      requested_at:new Date().toLocaleString('vi-VN'),
+      status:'pending'
+    });
+    _showCancelState(btn);
+    showToast('✅ Đã gửi yêu cầu trả tủ thành công!');
+  }catch(e){
+    btn.disabled=false;
+    showToast('❌ Lỗi gửi yêu cầu: '+e.message);
+  }
+};
+
+// Hủy yêu cầu trả tủ đang pending
+window.cancelRelease=async function(){
+  if(!_currentMssv) return;
+  if(!confirm('Bạn có chắc muốn hủy yêu cầu trả tủ không?')) return;
+  const btn=document.getElementById('btn-release');
+  btn.disabled=true;
+  try{
+    await remove(ref(db,`release_requests/${_currentMssv}`));
+    _showRequestState(btn);
+    showToast('↩️ Đã hủy yêu cầu trả tủ.');
+  }catch(e){
+    btn.disabled=false;
+    showToast('❌ Lỗi hủy yêu cầu: '+e.message);
+  }
+};
+
 </script>
 </body>
 </html>
