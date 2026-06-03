@@ -31,10 +31,10 @@ C: dict[str, str] = {
 # ─────────────────────────────────────────────────────────────────────────────
 #  KÍCH THƯỚC MÀN HÌNH & CAMERA
 # ─────────────────────────────────────────────────────────────────────────────
-SCREEN_W: int = 1280
-SCREEN_H: int = 720
-CAM_W:    int = 680
-CAM_H:    int = 510
+SCREEN_W: int = 1024
+SCREEN_H: int = 600
+CAM_W:    int = 560   # ~55% chiều rộng màn hình
+CAM_H:    int = 460   # 600 - header(70) - footer(36) - margin
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HẰNG SỐ RUNTIME
@@ -48,20 +48,10 @@ IDLE_TIMEOUT:  int   = 60     # giây không tương tác → tự về màn hì
 # ─────────────────────────────────────────────────────────────────────────────
 #  FONT FACTORY  (phải gọi sau khi Tk() đã khởi tạo)
 # ─────────────────────────────────────────────────────────────────────────────
-def make_fonts() -> dict[str, tkfont.Font]:
-    """
-    Trả về dict các đối tượng Font dùng chung trong toàn bộ UI.
-
-    Gọi MỘT LẦN duy nhất bên trong __init__ của KioskApp (sau super().__init__()),
-    rồi truyền dict này cho các builder cần dùng.
-
-    Ví dụ:
-        self.fonts = make_fonts()
-        lbl = tk.Label(..., font=self.fonts["title"])
-    """
+def make_fonts():
     return {
-        "title": tkfont.Font(family="Segoe UI", size=26, weight="bold"),
-        "head":  tkfont.Font(family="Segoe UI", size=16, weight="bold"),
-        "body":  tkfont.Font(family="Segoe UI", size=13),
-        "small": tkfont.Font(family="Segoe UI", size=10),
+        "title": tkfont.Font(family="Segoe UI", size=22, weight="bold"),  # 26→22
+        "head":  tkfont.Font(family="Segoe UI", size=14, weight="bold"),  # 16→14
+        "body":  tkfont.Font(family="Segoe UI", size=12),                 # 13→12
+        "small": tkfont.Font(family="Segoe UI", size=9),                  # 10→9
     }

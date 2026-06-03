@@ -13,8 +13,9 @@ from core.db import _conn
 
 def get_user(mssv: str) -> dict | None:
     with _conn() as con:
+        # BỔ SUNG: Thêm cột email vào SELECT
         row = con.execute(
-            "SELECT mssv, name, role, is_approved, has_face "
+            "SELECT mssv, name, role, is_approved, has_face, email "
             "FROM Users WHERE mssv=?", (mssv,)
         ).fetchone()
     return dict(row) if row else None
@@ -22,8 +23,9 @@ def get_user(mssv: str) -> dict | None:
 
 def list_users() -> list[dict]:
     with _conn() as con:
+        # BỔ SUNG: Thêm cột email vào SELECT
         rows = con.execute(
-            "SELECT mssv, name, role, is_approved, has_face "
+            "SELECT mssv, name, role, is_approved, has_face, email "
             "FROM Users ORDER BY name"
         ).fetchall()
     return [dict(r) for r in rows]
@@ -63,8 +65,9 @@ def register_user(mssv: str, name: str, email: str, pw_hash: str) -> bool:
 def get_user_by_password(mssv: str, pw_hash: str) -> dict | None:
     """Xác thực MSSV + SHA256 hash. Trả None nếu sai."""
     with _conn() as con:
+        # BỔ SUNG: Thêm cột email vào SELECT
         row = con.execute(
-            "SELECT mssv, name, role, is_approved, has_face "
+            "SELECT mssv, name, role, is_approved, has_face, email "
             "FROM Users WHERE mssv=? AND password=?",
             (mssv, pw_hash)
         ).fetchone()
@@ -143,13 +146,17 @@ def load_all_embeddings() -> dict[str, tuple[np.ndarray, str]]:
 def sync_users_to_firebase() -> bool:
     """Push toàn bộ Users table lên Firebase (dùng cho sync_tool)."""
     with _conn() as con:
+        # SỬA LỖI: Loại bỏ last_open (thuộc bảng Lockers) và thay thế bằng email
         rows = con.execute(
-            "SELECT mssv, name, role, is_approved, has_face FROM Users"
+            "SELECT mssv, name, role, is_approved, has_face, email FROM Users"
         ).fetchall()
     users_dict = {
         r["mssv"]: {
-            'name': r["name"], 'role': r["role"],
-            'is_approved': int(r["is_approved"]), 'has_face': bool(r["has_face"])
+            'name'       : r["name"],
+            'role'       : r["role"],
+            'is_approved': int(r["is_approved"]),
+            'has_face'   : bool(r["has_face"]),
+            'email'      : r["email"] or '',
         }
         for r in rows
     }

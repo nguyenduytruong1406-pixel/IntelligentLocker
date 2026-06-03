@@ -1,20 +1,13 @@
 """
-hardware/camera.py — Camera Backend (Intel RealSense IR + Color, winsdk)
+hardware/camera.py — Camera Backend, port trực tiếp từ main_gui.py
 
-On-Demand: Chỉ bật khi gọi .start(), tắt khi gọi .stop()
-→ Tránh nóng máy khi ở màn hình IDLE.
-
-Dùng:
-    from hardware.camera import CameraBackend
-    cam = CameraBackend()
-    cam.start(use_ir=True)   # use_ir=True khi cần liveness check
-    color, ir = cam.get()
-    cam.stop()
+start(use_ir)  → bật color + IR(nếu cần), chỉ gọi khi vào verify/enroll
+stop()         → set _running=False, loop asyncio tự dọn dẹp hardware
+get()          → lấy frame mới nhất
 """
 
 import threading
 import asyncio
-import time
 import cv2
 import numpy as np
 
@@ -22,14 +15,10 @@ from winsdk.windows.media.capture import MediaCapture, MediaCaptureInitializatio
 from winsdk.windows.media.capture.frames import MediaFrameSourceGroup, MediaFrameSourceKind
 from winsdk.windows.graphics.imaging import BitmapBufferAccessMode
 
-# ── Cấu hình ──────────────────────────────────────────────────────────────────
-IR_GROUP_NAME = "Rts-DMFT-Group"   # Display name của Intel RealSense source group
+IR_GROUP_NAME = "Rts-DMFT-Group"
 
-
-# ── Parse bitmap từ winsdk → numpy ────────────────────────────────────────────
 
 def parse_bgr(bmp) -> np.ndarray | None:
-    """Chuyển SoftwareBitmap (NV12) → BGR numpy array."""
     bmp_buf = ref = None
     try:
         w, h    = bmp.pixel_width, bmp.pixel_height
@@ -45,7 +34,6 @@ def parse_bgr(bmp) -> np.ndarray | None:
 
 
 def parse_gray(bmp) -> np.ndarray | None:
-    """Chuyển SoftwareBitmap (IR 8-bit) → grayscale numpy array."""
     bmp_buf = ref = None
     try:
         w, h    = bmp.pixel_width, bmp.pixel_height
@@ -60,52 +48,44 @@ def parse_gray(bmp) -> np.ndarray | None:
         if bmp_buf: bmp_buf.close()
 
 
-# ── Camera Backend ─────────────────────────────────────────────────────────────
-
 class CameraBackend:
-    """
-    Thread-safe camera backend cho Intel RealSense qua winsdk.
-
-    Attributes:
-        color : np.ndarray | None  — frame BGR mới nhất
-        ir    : np.ndarray | None  — frame IR mới nhất (nếu use_ir=True)
-    """
-
     def __init__(self):
-        self.color    = None
-        self.ir       = None
-        self._lock    = threading.Lock()
-        self._active  = False
-        self.use_ir   = False
-
-    # ── Public API ─────────────────────────────────────────────────────────────
+        self.color       = None
+        self.ir          = None
+        self._lock       = threading.Lock()
+        self._loop       = None
+        self._running    = False
+        self._thread     = None
+        self._ir_reader  = None
+        self._ir_running = False   # IR đang chạy hay không
+        self._use_ir     = False   # IR có được yêu cầu không
 
     def start(self, use_ir: bool = False):
-        """
-        Bật camera. Gọi được nhiều lần — tự restart nếu cần đổi use_ir.
-        """
-        if self._active:
-            if self.use_ir != use_ir:
-                self.stop()
-                time.sleep(0.5)
-            else:
-                return   # Đang chạy đúng mode rồi
-        self._active = True
-        self.use_ir  = use_ir
-        threading.Thread(target=self._run, daemon=True).start()
+        """Bật camera. Nếu đang chạy với use_ir khác thì stop trước rồi start lại."""
+        if self._running:
+            if self._use_ir == use_ir:
+                return   # đang chạy đúng mode
+            self.stop()
+            # chờ thread cũ thoát hẳn
+            if self._thread:
+                self._thread.join(timeout=3.0)
+        self._use_ir  = use_ir
+        self._running = True
+        self._thread  = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
 
     def stop(self):
-        """Tắt camera, giải phóng hardware."""
-        self._active = False
+        """
+        Tắt camera — chỉ set _running=False.
+        Asyncio loop tự thoát khỏi while loop và cleanup hardware.
+        KHÔNG gọi loop.stop() từ ngoài để tránh deadlock.
+        """
+        self._running = False
         with self._lock:
             self.color = None
             self.ir    = None
 
     def get(self) -> tuple[np.ndarray | None, np.ndarray | None]:
-        """
-        Lấy frame mới nhất (thread-safe).
-        Return: (color_bgr, ir_gray)
-        """
         with self._lock:
             c = self.color.copy() if self.color is not None else None
             i = self.ir.copy()    if self.ir    is not None else None
@@ -113,21 +93,20 @@ class CameraBackend:
 
     @property
     def is_active(self) -> bool:
-        return self._active
+        return self._running
 
     # ── Internal ───────────────────────────────────────────────────────────────
 
     def _run(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
         try:
-            loop.run_until_complete(self._loop_cam())
+            self._loop.run_until_complete(self._camera_loop())
         except Exception as e:
             print(f"[Camera] Lỗi: {e}")
-        finally:
-            loop.close()
+        # KHÔNG close loop ở đây — để GC dọn
 
-    async def _loop_cam(self):
+    async def _camera_loop(self):
         groups = await MediaFrameSourceGroup.find_all_async()
         group  = next((g for g in groups if g.display_name == IR_GROUP_NAME), None)
         if not group:
@@ -136,35 +115,46 @@ class CameraBackend:
 
         mc = MediaCapture()
         s  = MediaCaptureInitializationSettings()
-        s.source_group    = group
-        s.sharing_mode    = 0
+        s.source_group      = group
+        s.sharing_mode      = 0
         s.memory_preference = 1
         await mc.initialize_async(s)
 
-        cs = ir = None
+        color_src = ir_src = None
         for _, src in mc.frame_sources.items():
             k = int(src.info.source_kind)
-            if k == int(MediaFrameSourceKind.COLOR)    and not cs: cs = src
-            if k == int(MediaFrameSourceKind.INFRARED) and not ir: ir = src
+            if k == int(MediaFrameSourceKind.COLOR)    and not color_src: color_src = src
+            if k == int(MediaFrameSourceKind.INFRARED) and not ir_src:    ir_src    = src
 
-        cr = irr = None
-        if cs:
-            cr = await mc.create_frame_reader_async(cs)
-            cr.add_frame_arrived(lambda r, a: self._on_frame(r, parse_bgr, "color"))
-            await cr.start_async()
+        # Color reader — luôn bật
+        cr = await mc.create_frame_reader_async(color_src)
+        cr.add_frame_arrived(lambda r, a: self._on_frame(r, parse_bgr, "color"))
+        await cr.start_async()
 
-        if self.use_ir and ir:
-            irr = await mc.create_frame_reader_async(ir)
-            irr.add_frame_arrived(lambda r, a: self._on_frame(r, parse_gray, "ir"))
-            await irr.start_async()
+        # IR reader — tạo sẵn, bật ngay nếu use_ir=True
+        ir = None
+        if ir_src:
+            ir = await mc.create_frame_reader_async(ir_src)
+            self._ir_reader = ir
+            ir.add_frame_arrived(lambda r, a: self._on_frame(r, parse_gray, "ir"))
+            if self._use_ir:
+                await ir.start_async()
+                self._ir_running = True
 
-        print("[Camera] ✓ Bật phần cứng")
-        while self._active:
-            await asyncio.sleep(0.05)
+        print(f"[Camera] ✓ Bật (IR={'ON' if self._ir_running else 'OFF'})")
 
-        print("[Camera] Tắt phần cứng (on-demand sleep)")
-        if cr:  await cr.stop_async()
-        if irr: await irr.stop_async()
+        # Chạy cho đến khi stop() set _running=False
+        while self._running:
+            await asyncio.sleep(0.033)
+
+        # Dọn dẹp hardware — y hệt main_gui
+        print("[Camera] Đang tắt...")
+        await cr.stop_async()
+        if self._ir_running and ir:
+            await ir.stop_async()
+            self._ir_running = False
+        self._ir_reader = None
+        print("[Camera] Đã tắt")
 
     def _on_frame(self, reader, parser, attr: str):
         ref = None

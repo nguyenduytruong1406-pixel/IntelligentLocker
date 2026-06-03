@@ -83,11 +83,17 @@ def open_locker(mssv: str) -> tuple[bool, str]:
 
     if locker:
         lid = locker["locker_id"]
+        # Cập nhật last_open trong Lockers
+        with _conn() as con:
+            con.execute(
+                "UPDATE Lockers SET last_open=? WHERE locker_id=?", (now, lid)
+            )
         log_access("OPEN_LOCKER", mssv=mssv, name=name, locker_id=lid)
         try:
             fdb.reference(f'lockers/{lid}').update({
                 'current_mssv': mssv, 'status': 'occupied', 'last_open_time': now
             })
+            fdb.reference(f'users/{mssv}').update({'last_open': now})
             fdb.reference('logs').push({
                 'time': now, 'event': 'OPEN_LOCKER',
                 'mssv': mssv, 'name': name, 'locker_id': lid
@@ -112,11 +118,17 @@ def open_locker(mssv: str) -> tuple[bool, str]:
         )
 
     log_access("ASSIGN_LOCKER", mssv=mssv, name=name, locker_id=lid)
+    # Cập nhật last_open trong Lockers (gán tủ mới = lần đầu dùng)
+    with _conn() as con:
+        con.execute(
+            "UPDATE Lockers SET last_open=? WHERE locker_id=?", (now, lid)
+        )
     try:
         fdb.reference(f'lockers/{lid}').update({
             'current_mssv': mssv, 'status': 'occupied',
             'last_open_time': now, 'assigned_date': now
         })
+        fdb.reference(f'users/{mssv}').update({'last_open': now})
         fdb.reference('logs').push({
             'time': now, 'event': 'ASSIGN_LOCKER',
             'mssv': mssv, 'name': name, 'locker_id': lid

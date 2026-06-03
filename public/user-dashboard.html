@@ -294,10 +294,36 @@ function parseDate(str){
   return isNaN(d.getTime())?null:d;
 }
 
-function calcDays(str){
-  const d=parseDate(str);
-  if(!d) return null;
-  return Math.floor((Date.now()-d.getTime())/(1000*60*60*24));
+function calcIdleDays(lastOpenTime) {
+  if (!lastOpenTime || lastOpenTime === '—') return null;
+  
+  let d;
+  
+  // Xử lý chuỗi ngày tháng có dấu '/' (Định dạng Việt Nam)
+  if (lastOpenTime.includes('/')) {
+    // Tách lấy toàn bộ các con số trong chuỗi
+    const nums = lastOpenTime.match(/\d+/g); 
+    if (nums && nums.length >= 3) {
+      // Xác định xem "Giờ" đứng trước hay "Ngày" đứng trước
+      if (lastOpenTime.indexOf(':') < lastOpenTime.indexOf('/')) {
+        // Dạng: 14:11:15 3/6/2026 -> mảng nums là: [14, 11, 15, 3, 6, 2026]
+        // new Date(Năm, Tháng (trừ 1), Ngày, Giờ, Phút, Giây)
+        d = new Date(nums[5], nums[4] - 1, nums[3], nums[0], nums[1], nums[2]);
+      } else {
+        // Dạng: 3/6/2026 14:11:15 -> mảng nums là: [3, 6, 2026, 14, 11, 15]
+        let h = nums[3] || 0, m = nums[4] || 0, s = nums[5] || 0;
+        d = new Date(nums[2], nums[1] - 1, nums[0], h, m, s);
+      }
+    }
+  } else {
+    // Nếu là định dạng chuẩn ISO (VD: 2026-06-03 14:11:15) thì để JS tự lo
+    d = new Date(lastOpenTime.replace(' ', 'T'));
+  }
+  
+  if (!d || isNaN(d.getTime())) return null;
+  
+  // Tính số ngày idle (thời gian hiện tại - thời gian lần cuối mở)
+  return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 let _currentMssv='';
@@ -347,7 +373,7 @@ async function lookup(){
   const hasFace=!!user.has_face;
   let pendingDaysHtml='';
   if(!approved&&user.registered_at){
-    const days=calcDays(user.registered_at);
+    const days=calcIdleDays(user.registered_at);
     if(days!==null) pendingDaysHtml=`<span style="opacity:.75;font-weight:400"> · ${days} ngày</span>`;
   }
   chips.innerHTML=`
@@ -410,13 +436,13 @@ async function lookup(){
     lockerIcon.textContent='lock';
     document.getElementById('locker-name').textContent=`Tủ ${_currentLockerId}`;
     document.getElementById('locker-size').textContent=myLocker.size==='small'?'Loại nhỏ':'Loại lớn';
-    if(myLocker.last_open_time){
+    if(myLocker.last_open){
       document.getElementById('last-open').style.display='flex';
-      document.getElementById('last-open-time').textContent='Mở lần cuối: '+myLocker.last_open_time;
+      document.getElementById('last-open-time').textContent='Mở lần cuối: '+myLocker.last_open;
     }
 
     // Tính idle và hiển thị cảnh báo
-    const idleDays=calcDays(myLocker.last_open_time);
+    const idleDays=calcIdleDays(myLocker.last_open);
     if(idleDays!==null){
       const remaining=IDLE_AUTO-idleDays;
       const pct=Math.min(100,Math.round((idleDays/IDLE_AUTO)*100));

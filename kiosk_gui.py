@@ -29,7 +29,7 @@ from gui.kiosk_app import KioskApp
 # ── Cấu hình gửi mail — đọc từ .env ──────────────────────────────────────────
 # Tạo file .env cùng thư mục với kiosk_gui.py, KHÔNG commit lên git
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-load_dotenv(_env_path)
+load_dotenv(r"D:/DATN/Software/test_db_ver1/app_password.env")
 
 MAIL_SENDER      = os.getenv("MAIL_SENDER", "")
 MAIL_PASSWORD    = os.getenv("MAIL_PASSWORD", "")

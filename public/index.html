@@ -585,10 +585,16 @@ function autoExpirePendingCards(){
   _allUsersData.forEach(u=>{
     if(u.is_approved)return;
     if(!u.registered_at)return;
-    let regDate=new Date(u.registered_at);
-    if(isNaN(regDate.getTime())){
-      const p=u.registered_at.replace(',','').split(/[\s\/]+/);
-      if(p.length>=3)regDate=new Date(`${p[2]}-${String(p[1]).padStart(2,'0')}-${String(p[0]).padStart(2,'0')}T${p[3]||'00:00:00'}`);
+    let regDate;
+    // Nếu chuỗi chứa dấu '/' -> Chắc chắn là định dạng dd/MM/yyyy, phải tự parse
+    if (u.registered_at.includes('/')) {
+      const p = u.registered_at.replace(',', '').split(/[\s\/]+/);
+      if (p.length >= 3) {
+        regDate = new Date(`${p[2]}-${String(p[1]).padStart(2, '0')}-${String(p[0]).padStart(2, '0')}T${p[3] || '00:00:00'}`);
+      }
+    } else {
+      // Nếu là ISO chuẩn (YYYY-MM-DD) thì để JS tự lo
+      regDate = new Date(u.registered_at);
     }
     if(isNaN(regDate.getTime()))return;
     const daysPending=Math.floor((now-regDate.getTime())/(1000*60*60*24));

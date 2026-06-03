@@ -98,6 +98,16 @@ def migrate():
             """)
             print("[db] ✓ Tạo bảng LOCKER_DELETE_LOG")
 
+        # Thêm cột còn thiếu vào Lockers
+        locker_cols = [r[1] for r in con.execute("PRAGMA table_info(Lockers)").fetchall()]
+        for col, ddl in [
+            ("assigned_date", "ALTER TABLE Lockers ADD COLUMN assigned_date TEXT"),
+            ("last_open",     "ALTER TABLE Lockers ADD COLUMN last_open TEXT"),
+        ]:
+            if col not in locker_cols:
+                con.execute(ddl)
+                print(f"[db] ✓ Thêm cột '{col}' vào Lockers")
+
         # Fix status casing — chuẩn hoá về lowercase (idempotent)
         con.execute("UPDATE Lockers SET status='empty'    WHERE status='Empty'")
         con.execute("UPDATE Lockers SET status='occupied' WHERE status='Occupied'")
