@@ -71,6 +71,29 @@ th{background-color:var(--table-th);color:var(--table-th-text)}
 .stat-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
 .stat-value{font-size:2.5rem;font-weight:700;color:var(--primary);margin-bottom:8px}
 .stat-card .stat-label{font-size:.9rem;color:var(--text3);font-weight:500}
+/* Kiosk status */
+.kiosk-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-bottom:6px;transition:background .4s}
+.kiosk-dot.online{background:#28a745;box-shadow:0 0 0 3px rgba(40,167,69,.25)}
+.kiosk-dot.offline{background:#dc3545}
+.kiosk-dot.unknown{background:var(--text4)}
+#stat-kiosk.online{border-color:#28a745;background:rgba(40,167,69,.06)}
+#stat-kiosk.offline{border-color:#dc3545;background:rgba(220,53,69,.06)}
+.kiosk-last-seen{font-size:.75rem;color:var(--text4);margin-top:4px}
+/* Release pending card */
+#stat-release-pending.has-pending{border-color:var(--warning);background:rgba(255,193,7,.08);animation:pulse-border 2s ease-in-out infinite}
+@keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 rgba(255,193,7,.4)}50%{box-shadow:0 0 0 6px rgba(255,193,7,0)}}
+body.dark #stat-release-pending.has-pending{background:rgba(255,193,7,.06)}
+/* Header badge */
+.kiosk-header-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:.78rem;font-weight:600;margin-left:12px;vertical-align:middle;transition:background .4s,color .4s}
+.kiosk-header-badge.online{background:#d1f2e0;color:#155724}
+.kiosk-header-badge.offline{background:#fdecea;color:#7b1818}
+.kiosk-header-badge.unknown{background:var(--border2);color:var(--text4)}
+body.dark .kiosk-header-badge.online{background:#1b3a27;color:#81c784}
+body.dark .kiosk-header-badge.offline{background:#3b0a0a;color:#ef9a9a}
+.kiosk-badge-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.kiosk-header-badge.online .kiosk-badge-dot{background:#28a745}
+.kiosk-header-badge.offline .kiosk-badge-dot{background:#dc3545}
+.kiosk-header-badge.unknown .kiosk-badge-dot{background:var(--text4)}
 .search-box{margin-bottom:15px;position:relative}
 .search-box input{width:100%;max-width:400px;padding:10px 15px 10px 40px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:.95rem;transition:.2s}
 .search-box input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,123,255,.1)}
@@ -132,7 +155,7 @@ h2{font-size:1.2rem}
 <main class="main-content">
 <header class="top-header">
 <button class="mobile-menu-btn" onclick="toggleMobileSidebar()" title="Menu"><span class="ms">menu</span></button>
-<h2 id="tab-title">Locker Management System - Admin</h2>
+<h2 id="tab-title">Locker Management System - Admin<span id="kiosk-header-badge" class="kiosk-header-badge unknown"><span class="kiosk-badge-dot"></span><span id="kiosk-badge-text">Kiosk…</span></span></h2>
 </header>
 <div id="tab-home" class="tab-content active">
     <div class="stats-grid">
@@ -140,6 +163,16 @@ h2{font-size:1.2rem}
         <div class="stat-card" id="stat-users-pending"><div class="stat-value">0</div><div class="stat-label">Chờ duyệt</div></div>
         <div class="stat-card" id="stat-lockers-free"><div class="stat-value">0</div><div class="stat-label">Tủ trống</div></div>
         <div class="stat-card" id="stat-lockers-used"><div class="stat-value">0</div><div class="stat-label">Tủ đang dùng</div></div>
+        <div class="stat-card" id="stat-kiosk" style="cursor:default">
+            <div><span class="kiosk-dot unknown" id="kiosk-dot"></span></div>
+            <div class="stat-value" id="kiosk-status-text" style="font-size:1.1rem;margin-bottom:4px">—</div>
+            <div class="stat-label">Kiosk</div>
+            <div class="kiosk-last-seen" id="kiosk-last-seen">Đang kiểm tra…</div>
+        </div>
+        <div class="stat-card" id="stat-release-pending" onclick="switchTab('tab-release',document.getElementById('nav-release'))" style="cursor:pointer">
+            <div class="stat-value" id="stat-release-value" style="color:var(--warning)">0</div>
+            <div class="stat-label">Yêu cầu trả tủ</div>
+        </div>
     </div>
 </div>
 <div id="tab-users" class="tab-content">
@@ -433,6 +466,48 @@ const _reasonMap={
 let _allDeleteLogs=[];
 
 function startDataListeners(){
+
+// ── Kiosk status (realtime, cập nhật mỗi 30s) ─────────────────────────────
+const KIOSK_THRESHOLD = 90; // giây
+onValue(ref(db,'kiosk_status'),(snap)=>{
+  const badge  = document.getElementById('kiosk-header-badge');
+  const dot    = document.getElementById('kiosk-dot');
+  const txt    = document.getElementById('kiosk-status-text');
+  const card   = document.getElementById('stat-kiosk');
+  const lastEl = document.getElementById('kiosk-last-seen');
+  if(!snap.exists()){
+    ['badge','dot','card'].forEach(_=>_); // tránh null
+    [badge,dot,card].forEach(el=>{if(el){el.className=el.className.replace(/online|offline|unknown/g,'').trim()+' unknown';}});
+    if(txt) txt.textContent='Chưa có dữ liệu';
+    if(lastEl) lastEl.textContent='Kiosk chưa ghi lần nào';
+    if(badge){ document.getElementById('kiosk-badge-text').textContent='Kiosk —'; }
+    return;
+  }
+  const data = snap.val();
+  const lastSeen = data.last_seen ? new Date(data.last_seen) : null;
+  const connected = data.connected === true;
+  const diffSec = lastSeen ? (Date.now() - lastSeen.getTime()) / 1000 : Infinity;
+  const online = connected || diffSec < KIOSK_THRESHOLD;
+  const cls = online ? 'online' : 'offline';
+
+  [badge, dot, card].forEach(el=>{
+    if(!el) return;
+    el.className = el.className.replace(/\b(online|offline|unknown)\b/g,'').trim() + ' ' + cls;
+  });
+
+  if(txt) txt.textContent = online ? 'Online' : 'Offline';
+  if(badge) document.getElementById('kiosk-badge-text').textContent = 'Kiosk ' + (online ? 'Online' : 'Offline');
+
+  if(lastSeen && !isNaN(lastSeen)){
+    const mins = Math.floor(diffSec / 60);
+    const secs = Math.floor(diffSec % 60);
+    const ago  = diffSec < 60 ? `${Math.floor(diffSec)}s trước` : `${mins}m ${secs}s trước`;
+    if(lastEl) lastEl.textContent = 'last seen: ' + ago;
+  } else {
+    if(lastEl) lastEl.textContent = connected ? 'connected flag = true' : 'Không có dữ liệu';
+  }
+});
+
 onValue(ref(db,'users'),(snapshot)=>{
 const data=snapshot.val()||{};
 const tbody=document.getElementById('student-list');
@@ -847,15 +922,42 @@ onValue(ref(db,'locker_delete_logs'),(snapshot)=>{
 });
 
 // Release requests
+let _prevReleasePending=0;
 onValue(ref(db,'release_requests'),(snapshot)=>{
   const data=snapshot.val()||{};
   const tbody=document.getElementById('release-list');
-  if(!tbody) return;
   const entries=Object.values(data).filter(r=>r&&r.mssv);
   const pending=entries.filter(r=>r.status==='pending');
+
+  // Nav badge
   const badge=document.getElementById('release-badge');
   if(pending.length>0){badge.textContent=pending.length;badge.style.display='';}
   else{badge.style.display='none';}
+
+  // Stat card Home tab
+  const statCard=document.getElementById('stat-release-pending');
+  const statVal=document.getElementById('stat-release-value');
+  if(statVal) statVal.textContent=pending.length;
+  if(statCard){
+    if(pending.length>0) statCard.classList.add('has-pending');
+    else statCard.classList.remove('has-pending');
+  }
+
+  // Toast khi có yêu cầu MỚI (bỏ qua lần load đầu tiên _prevReleasePending===0 và pending===0)
+  if(_prevReleasePending!==null && pending.length>_prevReleasePending){
+    const diff=pending.length-_prevReleasePending;
+    showToast(`🔔 Có ${diff} yêu cầu trả tủ mới — vào tab Trả Tủ để xử lý!`);
+    // Browser notification nếu được cấp quyền
+    if(Notification&&Notification.permission==='granted'){
+      new Notification('Smart Locker — Yêu cầu trả tủ',{
+        body:`${diff} sinh viên vừa gửi yêu cầu trả tủ.`,
+        icon:'logo_web.jpg'
+      });
+    }
+  }
+  _prevReleasePending=pending.length;
+
+  if(!tbody) return;
   if(!entries.length){
     tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text4);padding:20px">Chưa có yêu cầu nào</td></tr>';
     return;
@@ -864,7 +966,7 @@ onValue(ref(db,'release_requests'),(snapshot)=>{
     <tr style="${r.status==='pending'?'background:rgba(255,193,7,.08)':''}">
       <td><strong>${r.mssv||'—'}</strong></td>
       <td style="font-weight:bold">${r.locker_id||'—'}</td>
-      <td>${r.requested_at||'—'}</td>
+      <td>${r.requested_at_display||r.requested_at||'—'}</td>
       <td><span style="color:${r.status==='pending'?'var(--warning)':'var(--success)'};font-weight:600">${r.status==='pending'?'⏳ Chờ xử lý':'✅ Đã xử lý'}</span></td>
       <td>${r.status==='pending'?`<button onclick="handleRelease('${r.mssv}','${r.locker_id}')" style="padding:5px 12px;background:var(--error);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:600">Xác nhận trả</button>`:'—'}</td>
     </tr>`).join('');

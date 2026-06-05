@@ -76,6 +76,9 @@ private_key_lockers.json
 node_modules/
 Thumbs.db
 
+emailjs_config.js
+.warn_flags/
+
 # Chặn các file ảnh
 *.png
 *.jpg
@@ -98,3 +101,4 @@ file test database/
 file test faceid/
 
 download_file/
+

@@ -6,6 +6,13 @@
 <title>Tủ Của Tôi — Smart Locker</title>
 <link rel="icon" type="image/jpeg" href="logo_web.jpg?v=2">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<!-- EmailJS config local — KHÔNG commit emailjs_config.js lên git -->
+<script src="emailjs_config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+  // Khởi tạo EmailJS từ config local
+  if(window.EMAILJS_CONFIG) emailjs.init(window.EMAILJS_CONFIG.publicKey);
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Tahoma,sans-serif}
 :root{
@@ -146,8 +153,21 @@ body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-
 .btn-confirm-modal:hover{opacity:.85}
 #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:#323232;color:#fff;padding:11px 20px;border-radius:8px;font-size:.88rem;opacity:0;transition:opacity .3s,transform .3s;z-index:999;pointer-events:none;white-space:nowrap}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* OTP step styles */
+.otp-input-wrap{display:flex;align-items:center;justify-content:center;gap:14px;margin:14px 0}
+#otp-input{font-size:28px;letter-spacing:10px;text-align:center;width:170px;padding:10px 12px;border:2px solid var(--primary);border-radius:10px;font-weight:700;background:var(--bg);color:var(--text);outline:none}
+#otp-input:focus{box-shadow:0 0 0 3px rgba(0,123,255,.2)}
+#otp-countdown{font-size:22px;font-weight:700;color:var(--error);font-variant-numeric:tabular-nums;min-width:52px}
+.otp-mode-label{font-size:.87rem;color:var(--text2);margin-bottom:4px;min-height:20px}
+.modal-err-otp{color:var(--error);font-size:.83rem;margin:6px 0 0;display:none}
+.modal-err-otp.show{display:block}
+#otp-entry-section{display:none}
+#otp-resend-btn{background:none;border:none;color:var(--primary);cursor:pointer;font-size:.82rem;text-decoration:underline;margin-top:6px;display:none}
+.modal-step-back{background:var(--bg);color:var(--text2);border:1.5px solid var(--border)!important;flex:1;padding:10px;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer}
+.btn-confirm-otp{background:var(--success);color:#fff;flex:2;padding:10px;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;border:none;transition:.2s}
+.btn-confirm-otp:hover{opacity:.85}
+#release-modal .modal-box{max-width:380px}
 </style>
-</head>
 <body>
 
 <div class="container">
@@ -238,25 +258,56 @@ body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-
 
   <div class="register-link">Chưa có tài khoản? <a href="register.html">Đăng ký tại đây</a></div>
 </div><!-- end container -->
-<!-- Password modal for release request -->
+<!-- 2-step modal: bước 1 = mật khẩu, bước 2 = OTP -->
 <div class="modal-overlay" id="release-modal">
   <div class="modal-box">
-    <h3><span class="ms" style="vertical-align:middle;margin-right:6px;color:var(--error)">lock</span>Xác nhận yêu cầu trả tủ</h3>
-    <p>Nhập mật khẩu để gửi yêu cầu trả tủ <strong id="modal-locker-id"></strong>.</p>
-    <input class="modal-input" type="password" id="release-password" placeholder="Nhập mật khẩu" maxlength="50"
-      onkeydown="if(event.key==='Enter')confirmRelease()">
-    <div class="modal-err" id="modal-err">❌ Mật khẩu không đúng</div>
-    <div class="modal-actions">
-      <button class="btn-cancel-modal" onclick="closeReleaseModal()">Huỷ</button>
-      <button class="btn-confirm-modal" onclick="confirmRelease()"><span class="ms" style="font-size:16px;vertical-align:middle">send</span> Gửi yêu cầu</button>
+
+    <!-- BƯỚC 1: Mật khẩu -->
+    <div id="release-step-1">
+      <h3><span class="ms" style="vertical-align:middle;margin-right:6px;color:var(--error)">lock</span>Xác nhận yêu cầu trả tủ</h3>
+      <p>Nhập mật khẩu để xác nhận trả tủ <strong id="modal-locker-id"></strong>.</p>
+      <input class="modal-input" type="password" id="release-password" placeholder="Nhập mật khẩu" maxlength="50"
+        onkeydown="if(event.key==='Enter')confirmReleasePassword()">
+      <div class="modal-err" id="modal-err">❌ Mật khẩu không đúng</div>
+      <div class="modal-actions">
+        <button class="btn-cancel-modal" onclick="closeReleaseModal()">Huỷ</button>
+        <button class="btn-confirm-modal" onclick="confirmReleasePassword()">
+          <span class="ms" style="font-size:16px;vertical-align:middle">arrow_forward</span> Tiếp theo
+        </button>
+      </div>
     </div>
+
+    <!-- BƯỚC 2: OTP -->
+    <div id="release-step-2" style="display:none">
+      <h3><span class="ms" style="vertical-align:middle;margin-right:6px;color:var(--primary)">mark_email_read</span>Nhập mã OTP</h3>
+      <p class="otp-mode-label" id="otp-mode-label">Đang gửi mã…</p>
+      <div id="otp-entry-section">
+        <div class="otp-input-wrap">
+          <input id="otp-input" type="tel" maxlength="6" placeholder="––––––"
+            oninput="this.value=this.value.replace(/\D/g,'')"
+            onkeydown="if(event.key==='Enter')confirmReleaseOtp()">
+          <span id="otp-countdown">05:00</span>
+        </div>
+        <div class="modal-err-otp" id="modal-err-otp"></div>
+        <div style="text-align:center">
+          <button id="otp-resend-btn" onclick="resendOtp()">🔄 Gửi lại mã</button>
+        </div>
+        <div class="modal-actions" style="margin-top:14px">
+          <button class="modal-step-back" onclick="switchReleaseStep(1)">← Quay lại</button>
+          <button class="btn-confirm-otp" onclick="confirmReleaseOtp()">
+            <span class="ms" style="font-size:16px;vertical-align:middle">check_circle</span> Xác nhận trả tủ
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 <div id="toast"></div>
 
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-import{getDatabase,ref,get,set,remove,query,limitToLast}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
+import{getDatabase,ref,get,set,remove,query,limitToLast,onValue}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
 
 const firebaseConfig={
   apiKey:"AIzaSyDwvFJXeKPvGi1Wj1RJlm0Pe5UU-eAkVms",
@@ -266,6 +317,19 @@ const firebaseConfig={
 };
 const app=initializeApp(firebaseConfig);
 const db=getDatabase(app);
+
+// ── EmailJS config (fallback khi Kiosk offline) — đọc từ emailjs_config.js ─
+const EMAILJS_PUBLIC_KEY  = window.EMAILJS_CONFIG?.publicKey  ?? "";
+const EMAILJS_SERVICE_ID  = window.EMAILJS_CONFIG?.serviceId  ?? "";
+const EMAILJS_TEMPLATE_ID = window.EMAILJS_CONFIG?.templateId ?? "";
+const KIOSK_ONLINE_SECS   = 90;   // last_seen < 90s → Kiosk ONLINE
+
+// ── OTP runtime state ──────────────────────────────────────────────────────
+let _otpExpires     = 0;
+let _otpCode        = "";      // chỉ dùng trong offline mode
+let _otpMode        = "online";
+let _otpCountdownId = null;
+let _otpUnsub       = null;
 
 const EVENT_LABEL={
   'OPEN_LOCKER'   :'Mở tủ',
@@ -586,12 +650,15 @@ window.requestRelease=function(){
   document.getElementById('modal-locker-id').textContent=_currentLockerId;
   document.getElementById('release-password').value='';
   document.getElementById('modal-err').classList.remove('show');
+  switchReleaseStep(1);
   document.getElementById('release-modal').classList.add('show');
   setTimeout(()=>document.getElementById('release-password').focus(),100);
 };
 
 window.closeReleaseModal=function(){
   document.getElementById('release-modal').classList.remove('show');
+  if(_otpCountdownId){ clearInterval(_otpCountdownId); _otpCountdownId=null; }
+  if(_otpUnsub){ _otpUnsub(); _otpUnsub=null; }
 };
 
 // Đóng modal khi click ra ngoài
@@ -599,16 +666,162 @@ document.getElementById('release-modal').addEventListener('click',function(e){
   if(e.target===this) closeReleaseModal();
 });
 
-window.confirmRelease=async function(){
+// ── Helpers modal ──────────────────────────────────────────────────────────
+window.switchReleaseStep=function(step){
+  document.getElementById('release-step-1').style.display=step===1?'block':'none';
+  document.getElementById('release-step-2').style.display=step===2?'block':'none';
+};
+
+function setOtpError(msg){
+  const el=document.getElementById('modal-err-otp');
+  el.textContent=msg; el.classList.toggle('show',!!msg);
+}
+
+function startOtpCountdown(){
+  if(_otpCountdownId) clearInterval(_otpCountdownId);
+  const el=document.getElementById('otp-countdown');
+  _otpExpires=Date.now()+5*60*1000;
+  _otpCountdownId=setInterval(()=>{
+    const left=Math.max(0,Math.round((_otpExpires-Date.now())/1000));
+    const m=String(Math.floor(left/60)).padStart(2,'0');
+    const s=String(left%60).padStart(2,'0');
+    if(el) el.textContent=`${m}:${s}`;
+    if(left===0){
+      clearInterval(_otpCountdownId); _otpCountdownId=null;
+      _otpCode='';
+      if(_otpUnsub){_otpUnsub();_otpUnsub=null;}
+      setOtpError('Mã OTP đã hết hạn. Vui lòng gửi lại.');
+      document.getElementById('otp-resend-btn').style.display='inline-block';
+    }
+  },1000);
+}
+
+// ── Bước 1: Kiểm tra mật khẩu → chuyển sang bước 2 ───────────────────────
+window.confirmReleasePassword=async function(){
   const pwd=document.getElementById('release-password').value;
+  if(!pwd){ document.getElementById('modal-err').classList.add('show'); return; }
+
+  // So sánh: hệ thống lưu SHA-256 hash
   const hashed=await sha256(pwd);
   if(hashed!==_currentUserPassword){
     document.getElementById('modal-err').classList.add('show');
     document.getElementById('release-password').select();
     return;
   }
-  closeReleaseModal();
-  if(!confirm(`Xác nhận gửi yêu cầu trả tủ ${_currentLockerId}?\nAdmin sẽ xử lý và liên hệ bạn.`)) return;
+
+  // Mật khẩu đúng → chuyển step 2
+  document.getElementById('modal-err').classList.remove('show');
+  switchReleaseStep(2);
+  document.getElementById('otp-entry-section').style.display='none';
+  document.getElementById('otp-resend-btn').style.display='none';
+  setOtpError('');
+  document.getElementById('otp-input').value='';
+  document.getElementById('otp-mode-label').textContent='Đang kiểm tra kết nối Kiosk…';
+
+  await _sendOtp();
+};
+
+// ── Gửi OTP (online qua Kiosk / offline qua EmailJS) ──────────────────────
+async function _isKioskOnline(){
+  try{
+    const snap=await get(ref(db,'kiosk_status/last_seen'));
+    if(!snap.exists()) return false;
+    return (Date.now()-new Date(snap.val()).getTime())/1000 < KIOSK_ONLINE_SECS;
+  }catch{ return false; }
+}
+
+async function _sendOtp(){
+  const online=await _isKioskOnline();
+  _otpMode=online?'online':'offline';
+
+  const userSnap=await get(ref(db,`users/${_currentMssv}`));
+  const userData=userSnap.exists()?userSnap.val():{};
+  const email=userData.email||'';
+  const name=userData.name||_currentMssv;
+
+  if(!email){
+    document.getElementById('otp-mode-label').textContent='⚠ Tài khoản chưa có email — không thể gửi OTP.';
+    return;
+  }
+
+  if(online){
+    document.getElementById('otp-mode-label').textContent='📡 Kiosk đang trực tuyến — đang gửi OTP qua Kiosk…';
+    // Ghi otp_requests → sync_listener sẽ sinh OTP, gửi mail, ghi otp_tokens
+    await set(ref(db,`otp_requests/${_currentMssv}`),{email,name,requested:new Date().toISOString()});
+
+    // Lắng nghe otp_tokens/{mssv} để biết khi nào OTP sẵn sàng
+    _otpUnsub=onValue(ref(db,`otp_tokens/${_currentMssv}`),(snap)=>{
+      if(!snap.exists()) return;
+      const t=snap.val();
+      if(new Date(t.expires_at).getTime()<Date.now()) return;
+      _otpExpires=new Date(t.expires_at).getTime();
+      _otpCode=t.code;   // lưu để so sánh lần cuối
+      document.getElementById('otp-mode-label').textContent='✉️ Mã OTP đã gửi tới email của bạn.';
+      document.getElementById('otp-entry-section').style.display='block';
+      document.getElementById('otp-input').focus();
+      startOtpCountdown();
+      if(_otpUnsub){_otpUnsub();_otpUnsub=null;}
+    });
+
+  } else {
+    document.getElementById('otp-mode-label').textContent='📴 Kiosk offline — đang gửi OTP trực tiếp qua email…';
+    // Sinh OTP phía client, gửi qua EmailJS
+    _otpCode=String(Math.floor(100000+Math.random()*900000));
+    _otpExpires=Date.now()+5*60*1000;
+    try{
+      await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{
+        to_name:name, to_email:email, mssv:_currentMssv,
+        otp_code:_otpCode, expires:'5 phút'
+      });
+      document.getElementById('otp-mode-label').textContent='✉️ Mã OTP đã gửi tới email của bạn.';
+      document.getElementById('otp-entry-section').style.display='block';
+      document.getElementById('otp-input').focus();
+      startOtpCountdown();
+    }catch(e){
+      document.getElementById('otp-mode-label').textContent='❌ Gửi mail thất bại. Kiểm tra kết nối và thử lại.';
+      document.getElementById('otp-resend-btn').style.display='inline-block';
+      console.error('[OTP-EmailJS]',e);
+    }
+  }
+}
+
+window.resendOtp=async function(){
+  document.getElementById('otp-resend-btn').style.display='none';
+  document.getElementById('otp-entry-section').style.display='none';
+  document.getElementById('otp-input').value='';
+  setOtpError('');
+  document.getElementById('otp-mode-label').textContent='Đang gửi lại mã…';
+  if(_otpCountdownId){clearInterval(_otpCountdownId);_otpCountdownId=null;}
+  if(_otpUnsub){_otpUnsub();_otpUnsub=null;}
+  await _sendOtp();
+};
+
+// ── Bước 2: Xác nhận OTP → ghi release_request ───────────────────────────
+window.confirmReleaseOtp=async function(){
+  const entered=document.getElementById('otp-input').value.trim();
+  if(!entered){setOtpError('Vui lòng nhập mã OTP.'); return;}
+  if(Date.now()>_otpExpires){setOtpError('Mã OTP đã hết hạn. Vui lòng gửi lại.'); return;}
+
+  let valid=false;
+  if(_otpMode==='online'){
+    // Kiểm tra Firebase (source of truth) để tránh giả mạo client-side
+    try{
+      const tSnap=await get(ref(db,`otp_tokens/${_currentMssv}`));
+      if(tSnap.exists()){
+        const t=tSnap.val();
+        valid=t.code===entered&&new Date(t.expires_at).getTime()>Date.now();
+      }
+    }catch{valid=false;}
+  } else {
+    valid=_otpCode===entered;
+  }
+
+  if(!valid){setOtpError('❌ Mã OTP không đúng. Vui lòng kiểm tra lại.'); return;}
+
+  // Hợp lệ → dọn dẹp + ghi release_request
+  if(_otpCountdownId){clearInterval(_otpCountdownId);_otpCountdownId=null;}
+  try{ await remove(ref(db,`otp_tokens/${_currentMssv}`)); }catch{}
+
   const btn=document.getElementById('btn-release');
   btn.disabled=true;
   try{
@@ -618,11 +831,12 @@ window.confirmRelease=async function(){
       requested_at:new Date().toLocaleString('vi-VN'),
       status:'pending'
     });
+    closeReleaseModal();
     _showCancelState(btn);
     showToast('✅ Đã gửi yêu cầu trả tủ thành công!');
   }catch(e){
     btn.disabled=false;
-    showToast('❌ Lỗi gửi yêu cầu: '+e.message);
+    setOtpError('❌ Lỗi gửi yêu cầu: '+e.message);
   }
 };
 

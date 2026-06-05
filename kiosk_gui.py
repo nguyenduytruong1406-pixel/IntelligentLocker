@@ -67,8 +67,20 @@ def _drain_warn_queue(app: KioskApp):
         )
     app.after(5_000, _drain_warn_queue, app)   # kiểm tra lại sau 5 giây
 
+def _heartbeat_loop():
+    """Background daemon — ghi /kiosk_status/last_seen lên Firebase mỗi 30 giây."""
+    from firebase_admin import db as _fdb
+    ref = _fdb.reference("kiosk_status")
+    while True:
+        try:
+            ref.update({"last_seen": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
+        except Exception as e:
+            print(f"[Heartbeat] Lỗi: {e}")
+        time.sleep(30)
+
+
 def _cleanup_loop():
-    """Background thread — chạy auto-cleanup mỗi 1 giờ."""
+    """Background daemon — chạy auto-cleanup mỗi 1 giờ."""
     while True:
         try:
             result = auto_cleanup_inactive(
@@ -271,6 +283,7 @@ if __name__ == "__main__":
     app = KioskApp()
 
     # Khởi động auto-cleanup ngay sau khi app tạo xong
+    threading.Thread(target=_heartbeat_loop,      daemon=True).start()
     threading.Thread(target=_cleanup_loop,        daemon=True).start()
     threading.Thread(target=_pending_expire_loop, daemon=True).start()
     app.after(5_000, _drain_warn_queue, app)   # bắt đầu drain sau 5 giây

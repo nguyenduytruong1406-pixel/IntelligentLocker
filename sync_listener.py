@@ -4,6 +4,9 @@ from firebase_admin import credentials, db
 import time
 import smtplib
 import os
+import random
+import string
+from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
@@ -22,6 +25,105 @@ DB_PATH = r'D:/DATN/Software/test_db_ver1/IntelligentLocker.db'
 
 def get_conn():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
+
+# ── HÀM SINH & GỬI OTP TRẢ TỦ ───────────────────────────────────────────────
+
+def _generate_otp(length: int = 6) -> str:
+    return ''.join(random.choices(string.digits, k=length))
+
+
+def send_otp_email(student_email: str, student_name: str, mssv: str, otp_code: str) -> bool:
+    """Gửi mail OTP xác nhận trả tủ."""
+    sender_email    = os.getenv("MAIL_SENDER")
+    sender_password = os.getenv("MAIL_PASSWORD")
+    sender_name     = os.getenv("MAIL_SENDER_NAME", "Smart Locker — HCMUTE")
+
+    if not sender_email or not sender_password:
+        print("[Mail] ⚠ Chưa cấu hình MAIL_SENDER / MAIL_PASSWORD — không thể gửi OTP.")
+        return False
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"🔑 Mã OTP trả tủ Smart Locker ({mssv})"
+        msg["From"]    = f"{sender_name} <{sender_email}>"
+        msg["To"]      = student_email
+
+        html = f"""
+        <div style="font-family:Segoe UI,sans-serif;max-width:520px;margin:auto;
+                    border:1px solid #e5e7eb;border-radius:12px;overflow:hidden">
+          <div style="background:#3b82f6;padding:24px 32px">
+            <h2 style="color:#fff;margin:0">🔑 Mã OTP Trả Tủ</h2>
+          </div>
+          <div style="padding:28px 32px;color:#374151">
+            <p>Xin chào <strong>{student_name}</strong>,</p>
+            <p>Bạn vừa yêu cầu trả tủ Smart Locker (<code>{mssv}</code>).<br>
+               Sử dụng mã OTP dưới đây để xác nhận:</p>
+            <div style="text-align:center;margin:28px 0">
+              <span style="font-size:40px;font-weight:700;letter-spacing:12px;
+                           color:#1d4ed8;background:#eff6ff;padding:16px 28px;
+                           border-radius:12px;display:inline-block">{otp_code}</span>
+            </div>
+            <p style="color:#6b7280;font-size:14px">⏱ Mã có hiệu lực trong <strong>5 phút</strong>.</p>
+            <p style="color:#9ca3af;font-size:12px;margin-top:24px">
+              Email tự động từ hệ thống Smart Locker — HCMUTE.<br>
+              Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email.
+            </p>
+          </div>
+        </div>"""
+
+        msg.attach(MIMEText(html, "html", "utf-8"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, student_email, msg.as_string())
+        print(f"[OTP] ✉ Đã gửi OTP tới {mssv} ({student_email})")
+        return True
+    except Exception as e:
+        print(f"[OTP] ✗ Lỗi gửi OTP cho {mssv}: {e}")
+        return False
+
+
+def on_otp_request(event):
+    """Lắng nghe /otp_requests/{mssv} — sinh OTP và ghi vào /otp_tokens/{mssv}."""
+    if event.path == '/':
+        return
+    mssv = event.path.strip('/').split('/')[0]
+    request_data = db.reference(f'otp_requests/{mssv}').get()
+    if not request_data:
+        return   # node bị xóa — bỏ qua
+
+    email = request_data.get('email', '')
+    name  = request_data.get('name', mssv)
+    if not email:
+        # Thử lấy email từ users node
+        user_data = db.reference(f'users/{mssv}').get() or {}
+        email = user_data.get('email', '')
+        name  = user_data.get('name', mssv)
+
+    if not email:
+        print(f"[OTP] ⚠ Không tìm thấy email cho {mssv} — bỏ qua.")
+        return
+
+    code       = _generate_otp()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Ghi token lên Firebase trước, rồi gửi mail
+    try:
+        db.reference(f'otp_tokens/{mssv}').set({
+            "code"      : code,
+            "expires_at": expires_at,
+        })
+    except Exception as e:
+        print(f"[OTP] ✗ Lỗi ghi otp_tokens/{mssv}: {e}")
+        return
+
+    send_otp_email(email, name, mssv, code)
+
+    # Xóa request sau khi xử lý để tránh fire lại
+    try:
+        db.reference(f'otp_requests/{mssv}').delete()
+    except Exception:
+        pass
+
 
 # ── HÀM GỬI EMAIL THÔNG BÁO DUYỆT ───────────────────────────────────────────
 def send_approval_email(student_email: str, student_name: str, mssv: str) -> bool:
@@ -174,6 +276,8 @@ def start():
     print("[System] 📡 Đang bật kết nối Websocket Realtime...")
     db.reference('users').listen(on_user_change)
     db.reference('lockers').listen(on_locker_change)
+    db.reference('otp_requests').listen(on_otp_request)
+    print("[System] 📡 Đã bật listener: users / lockers / otp_requests")
 
 if __name__ == "__main__":
     start()

@@ -1020,3 +1020,62 @@ Giữ lại để tương thích ngược, thực tế dùng `self._vkb.attach()
 | Python (kiosk/sync) | `"2026-06-04 11:02:34"` — `strftime("%Y-%m-%d %H:%M:%S")` |
 | JavaScript (web) | `new Date().toISOString().slice(0,19).replace('T',' ')` |
 | Field name | `last_open` — bỏ hoàn toàn `last_open_time` |
+
+1 — Cập nhật dòng ngày cấu trúc file:
+## 🗂 Cấu trúc file hiện tại (FINAL — cập nhật 05/06/2026)
+Thêm emailjs_config.js vào cây thư mục:
+├── emailjs_config.js             ← EmailJS credentials (KHÔNG commit git)
+2 — Cập nhật Firebase Structure section, thêm 4 node mới:
+/kiosk_status/last_seen
+/kiosk_status/connected
+/otp_requests/{mssv}
+/otp_tokens/{mssv}
+3 — Cập nhật sync_listener.py trong bảng Firebase Sync:
+- /otp_requests/{mssv} → sinh OTP + gửi mail + ghi otp_tokens
+4 — Cập nhật .gitignore (nếu có trong README):
+emailjs_config.js
+.warn_flags/
+
+## 🔄 Changelog — 05/06/2026 (Kiosk Status & Thông Báo Trả Tủ)
+
+### Mục tiêu
+1. Hiển thị trạng thái Kiosk online/offline realtime trên trang admin
+2. Thông báo rõ ràng khi có yêu cầu trả tủ mới
+
+---
+
+### `index.html` — Kiosk Status
+
+#### Stat card "Kiosk" (Home tab)
+- Card thứ 5 trong stats-grid
+- Dot xanh/đỏ + text "Online" / "Offline"
+- Dòng nhỏ "last seen: Xs trước" — cập nhật realtime
+- Viền card đổi màu xanh/đỏ tương ứng
+
+#### Badge trên header
+- Hiện "Kiosk Online" / "Kiosk Offline" ngay cạnh tiêu đề
+- Luôn thấy dù đang ở tab nào
+
+#### Logic phát hiện online
+- Dùng `onValue` lắng nghe `/kiosk_status` realtime — không poll
+- Online nếu `connected=true` **hoặc** `last_seen < 90 giây`
+
+---
+
+### `index.html` — Thông Báo Yêu Cầu Trả Tủ
+
+#### Stat card "Yêu cầu trả tủ" (Home tab)
+- Hiện số pending realtime, màu vàng
+- Khi có pending: viền vàng + animation pulse nhấp nháy
+- Click vào card → tự chuyển sang tab Trả Tủ
+
+#### Toast notification
+- Hiện `"🔔 Có N yêu cầu trả tủ mới"` mỗi khi count tăng
+- Không fire khi load trang lần đầu
+
+#### Browser Notification
+- Hiện notification hệ thống kể cả khi tab đang minimize
+- Yêu cầu đã cấp quyền Notification trước đó
+
+#### Fix đồng thời
+- Hiển thị `requested_at_display` (chuỗi tiếng Việt) thay vì ISO string trong bảng
