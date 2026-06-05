@@ -531,7 +531,7 @@ window.deleteUserCard=function(mssv){
   // Trả tủ nếu đang mượn
   const userLocker=Object.values(_lockersData).find(l=>l.current_mssv===mssv);
   const releasePromise=userLocker
-    ?update(ref(db,`lockers/${userLocker.locker_id}`),{status:'empty',current_mssv:'',assigned_date:''})
+    ?update(ref(db,`lockers/${userLocker.locker_id}`),{status:'empty',current_mssv:'',assigned_date:'',last_open:'',last_open_time:''})
     :Promise.resolve();
   releasePromise.then(()=>{
     // Ghi log xóa
@@ -601,7 +601,7 @@ function autoExpirePendingCards(){
     if(daysPending>=_cfg.expireDays){
       const userLocker=Object.values(_lockersData).find(l=>l.current_mssv===u.mssv);
       const releaseP=userLocker
-        ?update(ref(db,`lockers/${userLocker.locker_id}`),{status:'empty',current_mssv:'',assigned_date:''})
+        ?update(ref(db,`lockers/${userLocker.locker_id}`),{status:'empty',current_mssv:'',assigned_date:'',last_open:'',last_open_time:''})
         :Promise.resolve();
       releaseP.then(()=>push(ref(db,'locker_delete_logs'),{
         delete_time:new Date().toLocaleString('vi-VN'),
@@ -649,7 +649,7 @@ window.confirmAssignLocker=function(){
 const mssv=document.getElementById('assign-mssv').textContent;
 const lockerId=document.getElementById('locker-select').value;
 if(!lockerId){showToast('❌ Vui lòng chọn tủ');return}
-update(ref(db,`lockers/${lockerId}`),{status:'occupied',current_mssv:mssv,last_open_time:new Date().toLocaleString('vi-VN'),assigned_date:new Date().toLocaleString('vi-VN')})
+update(ref(db,`lockers/${lockerId}`),{status:'occupied',current_mssv:mssv,last_open:new Date().toISOString().slice(0,19).replace('T',' '),assigned_date:new Date().toISOString().slice(0,19).replace('T',' ')})
 .then(()=>{
 showToast(`✅ Đã gán tủ ${lockerId} cho ${mssv}`);
 document.getElementById('assignModal').style.display='none';
@@ -661,9 +661,15 @@ window.releaseUserLocker=function(mssv){
 const userLocker=Object.values(_lockersData).find(l=>l.current_mssv===mssv);
 if(!userLocker){showToast('❌ Sinh viên này không mượn tủ nào');return}
 if(!confirm(`Xác nhận trả tủ ${userLocker.locker_id}?`))return;
-update(ref(db,`lockers/${userLocker.locker_id}`),{status:'empty',current_mssv:"",assigned_date:""})
+const lockerId=userLocker.locker_id;
+update(ref(db,`lockers/${lockerId}`),{status:'empty',current_mssv:"",assigned_date:"",last_open:"",last_open_time:""})
+.then(()=>push(ref(db,'locker_delete_logs'),{
+  mssv,locker_id:lockerId,
+  delete_time:new Date().toISOString().slice(0,19).replace('T',' '),
+  reason:'admin_force'
+}))
 .then(()=>{
-showToast(`✅ Đã trả tủ ${userLocker.locker_id}`);
+showToast(`✅ Đã trả tủ ${lockerId}`);
 document.getElementById('userModal').style.display='none';
 })
 .catch(error=>{console.error(error);showToast('❌ Lỗi: '+error.message)});
@@ -721,7 +727,7 @@ const key=`L${String(i).padStart(2,'0')}`;
 const info=data[key]||{};
 const status=(info.status||'empty').toLowerCase();
 const mssv=info.current_mssv||'Trống';
-const lastOpen=info.last_open_time||'—';
+const lastOpen=info.last_open||info.last_open_time||'—';
 const assignedDate=info.assigned_date||'—';
 const isOcc=status==='occupied';
 const idleDays=calcIdleDays(lastOpen);
@@ -932,7 +938,7 @@ window.handleRelease=async function(mssv,lockerId){
 Thao tác này sẽ giải phóng tủ và đánh dấu yêu cầu đã xử lý.`)) return;
   try{
     // Giải phóng tủ
-    await update(ref(db,`lockers/${lockerId}`),{status:'empty',current_mssv:'',assigned_date:''});
+    await update(ref(db,`lockers/${lockerId}`),{status:'empty',current_mssv:'',assigned_date:'',last_open:'',last_open_time:''});
     // Ghi log
     await push(ref(db,'locker_delete_logs'),{
       mssv,locker_id:lockerId,

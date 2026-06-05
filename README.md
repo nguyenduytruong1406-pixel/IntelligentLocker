@@ -4,7 +4,7 @@
 
 ---
 
-## 🗂 Cấu trúc file hiện tại (FINAL — cập nhật 29/05/2026)
+## 🗂 Cấu trúc file hiện tại (FINAL — cập nhật 04/06/2026)
 
 ```text
 test_db_ver1/
@@ -15,7 +15,7 @@ test_db_ver1/
 │   ├── locker_db.py              ← open_locker, assign_locker, release_locker, get_all_lockers,
 │   │                                log_locker_delete, get_inactive_lockers, auto_cleanup_inactive
 │   ├── log_db.py                 ← log_access, export_csv, rate_limit
-│   └── firebase.py               ← sync_all_to_firebase, push_log
+│
 │
 ├── hardware/                     ← Phần cứng
 │   ├── __init__.py
@@ -41,7 +41,7 @@ test_db_ver1/
 │   ├── 404.html                  ← Trang lỗi Not Found
 │   
 │
-├── kiosk_gui.py                  ← Entry point kiosk — KioskApp + auto-cleanup + pending-expire daemon thread
+├── kiosk_gui.py                  ← Entry point kiosk — KioskApp + auto-cleanup + pending-expire + heartbeat daemon thread
 ├── .env                          ← Gmail credentials (KHÔNG commit git — xem .env.example)
 ├── main_gui.py                   ← ⚠️ GUI tkinter nhận diện khuôn mặt ban đầu (prototype cũ) — ĐÃ được thay thế hoàn toàn bởi gui/kiosk_app.py, giữ lại để tham chiếu, KHÔNG dùng trong production
 ├── sync_listener.py              ← Lắng nghe Firebase realtime (Websocket Push)
@@ -743,6 +743,7 @@ Thêm 2 lý do mới hiển thị trong tab **Lịch Sử Tủ**:
 
 #### Threading sau khi cập nhật
 ```python
+threading.Thread(target=_heartbeat_loop,       daemon=True).start()  # ghi kiosk_status/last_seen mỗi 30s
 threading.Thread(target=_cleanup_loop,        daemon=True).start()  # auto thu hồi tủ idle 7 ngày
 threading.Thread(target=_pending_expire_loop, daemon=True).start()  # auto xóa pending expire
 app.after(5_000, _drain_warn_queue, app)
@@ -872,7 +873,7 @@ Sửa push() — phần lockers: nếu tủ đang occupied trong SQLite → ki�
 Sinh viên vãng lai không thể tự đăng ký tài khoản — Firebase trả về `Permission Denied` vì rule cũ yêu cầu `auth != null` để ghi vào `/users/$mssv`.
 
 #### Fix
-C��p nhật rule `/users/$mssv`:
+Cập nhật rule `/users/$mssv`:
 ```json
 ".write": "auth != null || !data.exists()"
 ```
@@ -892,3 +893,130 @@ C��p nhật rule `/users/$mssv`:
 | Sinh viên không thể đăng ký (`Permission Denied`) | Firebase rule yêu cầu `auth != null` cho mọi write | Rule mới: `auth != null \|\| !data.exists()` |
 | `sync_users_to_firebase` lỗi column | Query Users JOIN nhầm sang cột `last_open` của Lockers | Sửa câu SELECT đúng bảng |
 | Kiosk "Bỏ qua" khuôn mặt → về trang chủ | Logic skip chưa check trạng thái tủ | Thêm rẽ nhánh `_show_locker_menu` / `_show_locker_picker` |
+
+---
+
+## 🔄 Changelog — 04/06/2026 (Fix đồng bộ tủ)
+
+### Mục tiêu
+1. Sửa triệt để lỗi mất `assigned_date` và `last_open` khi đồng bộ Firebase ↔ SQLite
+2. Thống nhất field name `last_open` (bỏ `last_open_time` cũ)
+3. Đảm bảo trả tủ từ web xóa đúng tất cả các field liên quan
+
+---
+
+### `sync_tool.py` — Fix mất dữ liệu khi đồng bộ
+
+#### Bug fix
+- **`get_sqlite_lockers()`** — thêm `assigned_date` vào câu SELECT (trước bị bỏ sót)
+- **`push()` — lockers** — đổi `.set()` → `.update()` để không xóa field không có trong payload; thêm `assigned_date` vào payload; merge `last_open` lấy giá trị mới hơn thay vì ghi đè bằng `''`
+- **Nhánh FIX LOCKER** — thêm `assigned_date: ''` vào payload khi reset tủ đã trả
+
+---
+
+### `sync_listener.py` — Fix trả tủ từ web
+
+#### Bug fix — `on_locker_change()`
+- Đảo thứ tự xử lý: check `status='empty'` **trước**, sync `last_open` **sau**
+- Thêm `assigned_date=NULL, last_open=NULL` vào câu UPDATE khi reset tủ
+- `return` sớm sau khi reset — tránh sync `last_open` cũ còn trên Firebase vào tủ vừa trả
+
+---
+
+### `kiosk_gui.py` — Thêm Heartbeat
+
+#### Tính năng mới
+- **`_heartbeat_loop()`** — daemon thread mới, ghi `/kiosk_status/last_seen` lên Firebase mỗi **30 giây**
+
+```python
+threading.Thread(target=_heartbeat_loop, daemon=True).start()
+```
+
+---
+
+### `index.html` — Fix trả tủ xóa đủ field
+
+#### Bug fix
+| Hàm | Fix |
+|---|---|
+| `confirmAssignLocker()` | Đổi `last_open_time` → `last_open`, đổi `toLocaleString` → ISO format |
+| `releaseUserLocker()` | Thêm `last_open:'', last_open_time:''` + ghi log `admin_force` vào `locker_delete_logs` |
+| `handleRelease()` | Thêm `last_open:'', last_open_time:''` |
+| `deleteCard()` | Thêm `last_open:'', last_open_time:''` |
+| `autoExpirePendingCards()` | Thêm `last_open:'', last_open_time:''` |
+| Render grid | Đọc `last_open \|\| last_open_time` — tương thích ngược dữ liệu cũ |
+
+---
+
+### `core/locker_db.py` — Fix `release_locker()`
+
+- Thêm `last_open=NULL` vào câu UPDATE (trước chỉ có `assigned_date=NULL`)
+
+---
+
+---
+
+## 🔄 Changelog — 04/06/2026 (Giao diện Kiosk — Màn hình cảm ứng 1024×600)
+
+### Mục tiêu
+1. Điều chỉnh giao diện kiosk vừa màn hình Waveshare 7" 1024×600px
+2. Thêm bàn phím ảo QWERTY cho màn hình cảm ứng (không có bàn phím vật lý)
+3. Kiểm soát chính xác thời điểm hiện/ẩn bàn phím
+
+---
+
+### `gui/theme.py` — Điều chỉnh kích thước màn hình
+
+| Tham số | Cũ | Mới | Lý do |
+|---|---|---|---|
+| `SCREEN_W` | 1280 | 1024 | Waveshare 7" 1024×600 |
+| `SCREEN_H` | 720 | 600 | Waveshare 7" 1024×600 |
+| `CAM_W` | 680 | 560 | ~55% chiều rộng màn hình |
+| `CAM_H` | 510 | 430 | `600 - header(60) - footer(36) - y(65) - margin` |
+| Font `title` | size 26 | size 22 | Vừa với màn hình nhỏ hơn |
+| Font `head` | size 16 | size 14 | |
+| Font `body` | size 13 | size 12 | |
+| Font `small` | size 10 | size 9 | |
+
+---
+
+### `gui/kiosk_app.py` — Fix layout + Thêm bàn phím ảo
+
+#### Fix layout header
+- Header height: `70px → 60px`
+- `lbl_time.place(y=24 → y=18)` — căn giữa trong header mới
+- Camera / placeholder `y=85 → y=65` — sát header hơn
+
+#### Thêm class `VirtualKeyboard`
+Bàn phím ảo QWERTY nhúng trong cửa sổ chính dưới dạng `tk.Frame` (không dùng `Toplevel` tránh vấn đề focus trên Raspberry Pi / Windows):
+
+**Tính năng:**
+- Layout QWERTY đầy đủ + hàng số + ký tự đặc biệt (`@`, `.`, `_`, `-`)
+- Chế độ thường / HOA (nút ⇧ toggle, tự tắt sau khi gõ một chữ hoa)
+- Nút ⌫ xóa từng ký tự, CLR xóa hết, OK đóng bàn phím
+- **Title bar kéo được** — giữ và kéo để di chuyển bàn phím ra chỗ thuận tiện; vị trí được ghi nhớ trong phiên
+- Nút **✕** trên title bar để đóng
+- `takefocus=False` trên tất cả nút → entry không bị mất focus khi nhấn phím
+- Mặc định ẩn hoàn toàn, **không** tự hiện khi app khởi động
+
+**Kiểm soát hiển thị:**
+- Chỉ mở khi người dùng **click/chạm trực tiếp vào ô nhập** (`Button-1`)
+- Không dùng `FocusIn` (tránh trigger tự động khi app khởi động)
+- Cờ `_enabled = False` → bật sau `300ms` (`self.after(300, self._vkb.enable)`) đảm bảo app render xong trước khi lắng nghe sự kiện
+- Tự ẩn khi chuyển màn hình (`_go()` gọi `self._vkb.hide()`)
+
+**Gắn vào Entry:**
+- `self._vkb.attach(entry)` — gắn vào entry MSSV (face login), MSSV/mật khẩu/OTP (login pass), và tất cả field đăng ký
+
+#### Thêm hàm `attach_keyboard()` (stub)
+Giữ lại để tương thích ngược, thực tế dùng `self._vkb.attach()`.
+
+---
+
+### Quy ước field `last_open` (chuẩn hóa)
+
+| Nguồn | Format |
+|---|---|
+| Python (kiosk/sync) | `"2026-06-04 11:02:34"` — `strftime("%Y-%m-%d %H:%M:%S")` |
+| JavaScript (web) | `new Date().toISOString().slice(0,19).replace('T',' ')` |
+| Field name | `last_open` — bỏ hoàn toàn `last_open_time` |

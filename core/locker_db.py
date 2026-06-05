@@ -177,7 +177,7 @@ def release_locker(mssv: str) -> tuple[bool, str]:
 
     with _conn() as con:
         con.execute(
-            "UPDATE Lockers SET status='empty', current_mssv=NULL, assigned_date=NULL WHERE locker_id=?",
+            "UPDATE Lockers SET status='empty', current_mssv=NULL, assigned_date=NULL, last_open=NULL WHERE locker_id=?",
             (lid,)
         )
 

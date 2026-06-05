@@ -176,6 +176,247 @@ class OTPDialog(tk.Toplevel):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+#  VirtualKeyboard — Bàn phím ảo QWERTY nhúng trong cửa sổ chính (tk.Frame)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class VirtualKeyboard:
+    """
+    Bàn phím ảo tk.Frame nhúng trong cửa sổ chính.
+    - Ẩn mặc định, chỉ hiện khi người dùng CLICK vào Entry
+    - Có title bar để kéo ra chỗ khác
+    - takefocus=False trên tất cả nút → entry không mất focus
+    - Đóng bằng nút ✕ trên title bar hoặc nút OK
+    """
+
+    _ROWS_LOWER = [
+        ["1","2","3","4","5","6","7","8","9","0","⌫"],
+        ["q","w","e","r","t","y","u","i","o","p"],
+        ["a","s","d","f","g","h","j","k","l","@","."],
+        ["⇧","z","x","c","v","b","n","m","_","-","⌫"],
+        ["SPACE","CLR","OK"],
+    ]
+    _ROWS_UPPER = [
+        ["1","2","3","4","5","6","7","8","9","0","⌫"],
+        ["Q","W","E","R","T","Y","U","I","O","P"],
+        ["A","S","D","F","G","H","J","K","L","@","."],
+        ["⇩","Z","X","C","V","B","N","M","_","-","⌫"],
+        ["SPACE","CLR","OK"],
+    ]
+
+    KB_W    = 422
+    KB_H    = 272   # 24px title bar + 248px keys
+
+    _BG_FRAME  = "#0d1021"
+    _BG_TITLE  = "#1a1d27"
+    _BG_KEY    = "#252a3d"
+    _BG_SPACE  = "#1a1f30"
+    _BG_SHIFT  = "#3b4fd4"
+    _BG_DEL    = "#7f1d1d"
+    _BG_OK     = "#14532d"
+    _BG_CLR    = "#374151"
+    _FG        = "#e2e8f0"
+    _FG_MUTED  = "#64748b"
+
+    def __init__(self, root: tk.Tk):
+        self._root    = root
+        self._target: tk.Entry | None = None
+        self._shift   = False
+        self._visible = False
+        self._enabled = False   # True sau khi app render xong
+        # Vị trí mặc định — góc dưới phải, trên footer
+        self._x = SCREEN_W - self.KB_W - 2
+        self._y = SCREEN_H - self.KB_H - 36
+        # Drag
+        self._drag_ox = 0
+        self._drag_oy = 0
+
+        self._frame = tk.Frame(
+            root, bg=self._BG_FRAME,
+            highlightthickness=1, highlightbackground="#2e3150",
+        )
+        self._build()
+        # KHÔNG gọi place() → frame không hiển thị cho đến khi _on_click
+
+    # ──────────────────────────────────────── enable / attach
+    def enable(self):
+        """Gọi sau khi app render xong (dùng root.after(200, ...))."""
+        self._enabled = True
+
+    def attach(self, entry: tk.Entry):
+        """Gắn bàn phím — chỉ phản hồi Button-1 (click/chạm), không FocusIn."""
+        entry.bind("<Button-1>", lambda e, en=entry: self._on_click(en), add="+")
+
+    # ──────────────────────────────────────── show / hide
+    def _on_click(self, entry: tk.Entry):
+        if not self._enabled:
+            return
+        self._target = entry
+        self._shift  = False
+        self._build_keys()
+        self._frame.place(x=self._x, y=self._y, width=self.KB_W, height=self.KB_H)
+        self._frame.lift()
+        self._visible = True
+
+    def hide(self):
+        self._frame.place_forget()
+        self._visible = False
+        self._target  = None
+
+    # ──────────────────────────────────────── build
+    def _build(self):
+        """Build toàn bộ (title bar + keys) — gọi một lần."""
+        for w in self._frame.winfo_children():
+            w.destroy()
+
+        # Title bar
+        self._title_bar = tk.Frame(self._frame, bg=self._BG_TITLE, height=24)
+        self._title_bar.pack(fill="x")
+        self._title_bar.pack_propagate(False)
+
+        tk.Label(
+            self._title_bar, text="⌨  Bàn phím",
+            bg=self._BG_TITLE, fg=self._FG_MUTED,
+            font=("Segoe UI", 9),
+        ).pack(side="left", padx=8)
+
+        tk.Button(
+            self._title_bar, text="✕",
+            bg=self._BG_TITLE, fg=self._FG_MUTED,
+            activebackground="#ef4444", activeforeground="white",
+            font=("Segoe UI", 9, "bold"),
+            relief="flat", bd=0, padx=8,
+            takefocus=False, cursor="hand2",
+            command=self.hide,
+        ).pack(side="right")
+
+        # Bind drag trên toàn bộ title bar và các child
+        for w in (self._title_bar, *self._title_bar.winfo_children()):
+            w.bind("<ButtonPress-1>", self._drag_start, add="+")
+            w.bind("<B1-Motion>",     self._drag_move,  add="+")
+
+        # Vùng phím
+        self._keys_frame = tk.Frame(self._frame, bg=self._BG_FRAME)
+        self._keys_frame.pack(fill="both", expand=True)
+        self._build_keys()
+
+    def _build_keys(self):
+        """Rebuild chỉ phần phím (sau shift toggle)."""
+        for w in self._keys_frame.winfo_children():
+            w.destroy()
+
+        outer = tk.Frame(self._keys_frame, bg=self._BG_FRAME, padx=3, pady=2)
+        outer.pack(fill="both", expand=True)
+
+        rows = self._ROWS_UPPER if self._shift else self._ROWS_LOWER
+
+        for row_keys in rows:
+            row_f = tk.Frame(outer, bg=self._BG_FRAME)
+            row_f.pack(fill="x", pady=1)
+
+            for key in row_keys:
+                is_space = key == "SPACE"
+                is_ok    = key == "OK"
+                is_clr   = key == "CLR"
+                is_del   = key == "⌫"
+                is_shift = key in ("⇧", "⇩")
+
+                bg = (self._BG_SHIFT if is_shift
+                      else self._BG_DEL   if is_del
+                      else self._BG_OK    if is_ok
+                      else self._BG_CLR   if is_clr
+                      else self._BG_SPACE if is_space
+                      else self._BG_KEY)
+
+                label = ("⇧" if key == "⇩" else "SPACE" if is_space else key)
+                font  = (("Segoe UI", 11, "bold")
+                         if (is_ok or is_shift or is_del or is_clr)
+                         else ("Segoe UI", 12))
+
+                btn = tk.Button(
+                    row_f, text=label,
+                    bg=bg, fg=self._FG,
+                    activebackground="#4f6ef7", activeforeground="white",
+                    font=font, relief="flat", bd=0,
+                    takefocus=False, cursor="hand2",
+                    command=lambda k=key: self._press(k),
+                )
+
+                kw: dict = {"side": "left", "pady": 1, "padx": 1, "ipady": 8}
+                if is_space:
+                    kw.update({"expand": True, "fill": "x"})
+                elif is_ok:
+                    kw.update({"ipadx": 14})
+                elif is_clr:
+                    kw.update({"ipadx": 8})
+                elif is_shift or is_del:
+                    kw.update({"ipadx": 7})
+                else:
+                    kw.update({"ipadx": 6})
+
+                btn.pack(**kw)
+
+    # ──────────────────────────────────────── drag
+    def _drag_start(self, event):
+        self._drag_ox = event.x_root - self._x
+        self._drag_oy = event.y_root - self._y
+
+    def _drag_move(self, event):
+        nx = max(0, min(event.x_root - self._drag_ox, SCREEN_W - self.KB_W))
+        ny = max(0, min(event.y_root - self._drag_oy, SCREEN_H - self.KB_H))
+        self._x, self._y = nx, ny
+        self._frame.place(x=nx, y=ny, width=self.KB_W, height=self.KB_H)
+        self._frame.lift()
+
+    # ──────────────────────────────────────── press
+    def _press(self, key: str):
+        if self._target is None or not self._target.winfo_exists():
+            self.hide()
+            return
+
+        entry = self._target
+
+        if key in ("⇧", "⇩"):
+            self._shift = not self._shift
+            self._build_keys()
+            self._frame.lift()
+            return
+
+        if key == "⌫":
+            try:
+                pos = entry.index(tk.INSERT)
+                if pos > 0:
+                    entry.delete(pos - 1, pos)
+            except Exception:
+                pass
+            return
+
+        if key == "CLR":
+            entry.delete(0, tk.END)
+            return
+
+        if key == "OK":
+            self.hide()
+            return
+
+        char = " " if key == "SPACE" else key
+        try:
+            pos = entry.index(tk.INSERT)
+            entry.insert(pos, char)
+        except Exception:
+            entry.insert(tk.END, char)
+
+        if self._shift and key.isalpha():
+            self._shift = False
+            self._build_keys()
+            self._frame.lift()
+
+
+def attach_keyboard(root: tk.Tk, entry: tk.Entry):
+    """Stub giữ lại để tránh lỗi nếu còn gọi ở đâu đó."""
+    pass
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 #  KioskApp
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -215,10 +456,13 @@ class KioskApp(tk.Tk):
         self._enroll_frames = []
         self._idle_timer    = time.time()
 
+        self._vkb = VirtualKeyboard(self)   # tạo trước _build_ui vì các frame builder dùng attach()
         self._build_ui()
         self._reload_db()
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self._verify_done = False
+        # Bật bàn phím sau 300ms — đảm bảo app render xong, tránh FocusIn giả
+        self.after(300, self._vkb.enable)
         self._loop()
 
     def _on_closing(self):
@@ -357,10 +601,12 @@ class KioskApp(tk.Tk):
         tk.Label(parent, text="MSSV", bg=C["bg"], fg=C["text"],
                  font=("Segoe UI", 11), anchor="w").pack(fill="x", padx=4)
         self.face_mssv_var = tk.StringVar()
-        tk.Entry(parent, textvariable=self.face_mssv_var,
+        _face_entry = tk.Entry(parent, textvariable=self.face_mssv_var,
                  font=("Segoe UI", 14), bg=C["card"], fg=C["text"],
                  insertbackground=C["text"], relief="flat",
-                 ).pack(fill="x", padx=4, pady=(2, 10))
+                 )
+        _face_entry.pack(fill="x", padx=4, pady=(2, 10))
+        self._vkb.attach(_face_entry)
         self.face_mssv_msg = tk.Label(parent, text="", bg=C["bg"],
                                       fg=C["red"], font=("Segoe UI", 11))
         self.face_mssv_msg.pack()
@@ -384,10 +630,12 @@ class KioskApp(tk.Tk):
         ]:
             tk.Label(parent, text=lbl, bg=C["bg"], fg=C["text"],
                      font=("Segoe UI", 11), anchor="w").pack(fill="x", padx=4)
-            tk.Entry(parent, textvariable=var, show=show,
+            _lp_e = tk.Entry(parent, textvariable=var, show=show,
                      font=("Segoe UI", 13), bg=C["card"], fg=C["text"],
                      insertbackground=C["text"], relief="flat",
-                     ).pack(fill="x", padx=4, pady=(2, 8))
+                     )
+            _lp_e.pack(fill="x", padx=4, pady=(2, 8))
+            self._vkb.attach(_lp_e)
 
         # Khung chứa ô OTP và nút Gửi mã
         tk.Label(parent, text="Mã OTP", bg=C["bg"], fg=C["text"],
@@ -396,10 +644,12 @@ class KioskApp(tk.Tk):
         otp_frame = tk.Frame(parent, bg=C["bg"])
         otp_frame.pack(fill="x", padx=4, pady=(2, 8))
         
-        tk.Entry(otp_frame, textvariable=self.lp_otp_var,
+        _otp_e = tk.Entry(otp_frame, textvariable=self.lp_otp_var,
                  font=("Segoe UI", 13), bg=C["card"], fg=C["text"],
                  insertbackground=C["text"], relief="flat", width=12
-                 ).pack(side="left", fill="x", expand=True)
+                 )
+        _otp_e.pack(side="left", fill="x", expand=True)
+        self._vkb.attach(_otp_e)
                  
         tk.Button(otp_frame, text="Gửi mã", bg=C["accent2"], fg="white",
                   font=("Segoe UI", 11, "bold"), relief="flat", cursor="hand2",
@@ -430,11 +680,16 @@ class KioskApp(tk.Tk):
             setattr(self, attr, tk.StringVar())
             tk.Label(parent, text=lbl, bg=C["bg"], fg=C["text"],
                      font=("Segoe UI", 11), anchor="w").pack(fill="x", padx=4)
-            tk.Entry(parent, textvariable=getattr(self, attr),
+            _reg_e = tk.Entry(parent, textvariable=getattr(self, attr),
                      show="●" if is_pw else "",
                      font=("Segoe UI", 12), bg=C["card"], fg=C["text"],
                      insertbackground=C["text"], relief="flat",
-                     ).pack(fill="x", padx=4, pady=(1, 5))
+                     )
+            _reg_e.pack(fill="x", padx=4, pady=(1, 5))
+            if not is_pw:   # chỉ gắn keyboard cho field text; field password dùng numpad riêng
+                self._vkb.attach(_reg_e)
+            else:
+                self._vkb.attach(_reg_e)  # password cũng cần gõ
         self.reg_msg = tk.Label(parent, text="", bg=C["bg"],
                                 fg=C["red"], font=("Segoe UI", 11))
         self.reg_msg.pack()
@@ -496,15 +751,16 @@ class KioskApp(tk.Tk):
         self.state = state
         self._idle_timer = time.time()
         self._hide_all_frames()
+        self._vkb.hide()   # ẩn bàn phím khi chuyển màn hình
 
         if state in (self.S_VERIFY_FACE, self.S_ENROLL_FACE):
             self.placeholder.place_forget()
-            self.cam_canvas.place(x=20, y=85)
+            self.cam_canvas.place(x=20, y=65)
             self.cam.start(use_ir=(state == self.S_VERIFY_FACE))
         else:
             self.cam.stop()
             self.cam_canvas.place_forget()
-            self.placeholder.place(x=20, y=85)
+            self.placeholder.place(x=20, y=65)
 
         if state == self.S_IDLE:
             self._current_user = None
@@ -811,7 +1067,7 @@ class KioskApp(tk.Tk):
         self._hide_all_frames()
         self.cam.stop()
         self.cam_canvas.place_forget()
-        self.placeholder.place(x=20, y=85)
+        self.placeholder.place(x=20, y=65)
 
         locker_info = lockers.get(locker_id, {})
         size_label  = locker_info.get("size", "").capitalize()

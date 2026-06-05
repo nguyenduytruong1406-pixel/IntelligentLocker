@@ -34,7 +34,7 @@ C: dict[str, str] = {
 SCREEN_W: int = 1024
 SCREEN_H: int = 600
 CAM_W:    int = 560   # ~55% chiều rộng màn hình
-CAM_H:    int = 460   # 600 - header(70) - footer(36) - margin
+CAM_H:    int = 430   # 600 - header(60) - footer(36) - y_offset(65) - margin(9)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HẰNG SỐ RUNTIME

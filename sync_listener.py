@@ -143,7 +143,19 @@ def on_locker_change(event):
     last_open = locker_data.get('last_open') or ''
 
     with get_conn() as conn:
-        # Sync last_open bất kể status
+        # Trả tủ từ web — xử lý TRƯỚC, xóa luôn assigned_date & last_open
+        if status == 'empty':
+            conn.execute(
+                """UPDATE Lockers
+                   SET status='empty', current_mssv=NULL,
+                       assigned_date=NULL, last_open=NULL
+                   WHERE locker_id=?""",
+                (lid,)
+            )
+            print(f"[Sync] 🔓 Trả tủ {lid} (Lệnh từ Web)")
+            return  # Không sync last_open của tủ vừa được trả
+
+        # Sync last_open — chỉ chạy khi tủ đang occupied
         if last_open:
             row = conn.execute(
                 "SELECT last_open FROM Lockers WHERE locker_id=?", (lid,)
@@ -156,14 +168,6 @@ def on_locker_change(event):
                     (last_open, lid)
                 )
                 print(f"[Sync] 🕐 last_open tủ {lid} → {last_open}")
-
-        # Trả tủ từ web
-        if status == 'empty':
-            conn.execute(
-                "UPDATE Lockers SET status='empty', current_mssv=NULL WHERE locker_id=?",
-                (lid,)
-            )
-            print(f"[Sync] 🔓 Trả tủ {lid} (Lệnh từ Web)")
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def start():

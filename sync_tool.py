@@ -33,7 +33,7 @@ def get_firebase_users():
     return snap or {}
 
 def get_sqlite_lockers():
-    cur.execute("SELECT locker_id, status, size, current_mssv, last_open FROM Lockers")
+    cur.execute("SELECT locker_id, status, size, current_mssv, last_open, assigned_date FROM Lockers")
     return {r['locker_id']: dict(r) for r in cur.fetchall()}
 
 def get_delete_logs():
