@@ -1,131 +1,247 @@
-# 📋 Claude.md — Intelligent Locker Face Recognition
-> Tổng hợp toàn bộ công việc  
-> Dự án: https://github.com/nguyenduytruong1406-pixel/IntelligentLocker
+# 🔐 IntelligentLocker — Smart Locker với nhận diện khuôn mặt
+
+> Hệ thống quản lý tủ đồ thông minh cho Makerspace HCMUTE  
+> Kiosk nhận diện khuôn mặt · Web Admin · Đồng bộ Firebase realtime  
+> 🔗 https://github.com/nguyenduytruong1406-pixel/IntelligentLocker
 
 ---
 
-## 🗂 Cấu trúc file hiện tại (FINAL — cập nhật 04/06/2026)
+## 🚀 Quickstart
+
+```bash
+# 1. Cài thư viện Python
+py -3.11 -m pip install opencv-python numpy dlib mediapipe Pillow \
+    firebase-admin scikit-image scikit-learn winsdk python-dotenv
+
+# 2. Tạo file môi trường
+cp .env.example app_password.env
+# → Điền MAIL_SENDER, MAIL_PASSWORD, MAIL_SENDER_NAME
+
+# 3. Đồng bộ dữ liệu (chạy 1 lần khi mới boot hoặc sau khi mất mạng lâu)
+py -3.11 sync_tool.py
+
+# 4. Khởi động Kiosk (tự kéo sync_listener lên ngầm)
+py -3.11 kiosk_gui.py
+
+# 5. Chạy Web Admin local (tab riêng)
+cd public
+py -m http.server 5500
+# → Mở http://localhost:5500
+```
+
+> **dlib trên Windows:** Cài binary wheel tại  
+> https://github.com/z-mahmud22/Dlib_Windows_Python3.x (Python 3.11)
+
+---
+
+## 🗂 Cấu trúc dự án
 
 ```text
 test_db_ver1/
-├── core/                         ← Database layer (phân tách từ locker_db.py gốc thành các module nhỏ)
-│   ├── __init__.py
-│   ├── db.py                     ← _conn(), migrate(), constants — tạo LOCKER_DELETE_LOG, fix status casing
-│   ├── user_db.py                ← register_user, get_user, load/save_embedding
-│   ├── locker_db.py              ← open_locker, assign_locker, release_locker, get_all_lockers,
-│   │                                log_locker_delete, get_inactive_lockers, auto_cleanup_inactive
-│   ├── log_db.py                 ← log_access, export_csv, rate_limit
+├── core/                            ← Tầng Database
+│   ├── db.py                        ← _conn(), migrate(), constants
+│   ├── user_db.py                   ← register_user, get_user, load/save_embedding
+│   ├── locker_db.py                 ← open_locker, assign_locker, release_locker,
+│   │                                   auto_cleanup_inactive, log_locker_delete
+│   └── log_db.py                    ← log_access, export_csv, rate_limit
 │
+├── hardware/
+│   └── camera.py                    ← CameraBackend (winsdk), parse_bgr/gray
 │
-├── hardware/                     ← Phần cứng
-│   ├── __init__.py
-│   └── camera.py                 ← CameraBackend (winsdk), parse_bgr/gray
+├── ai/
+│   ├── models.py                    ← Load dlib singleton (shape_pred, face_encoder)
+│   ├── face_utils.py                ← MediaPipe detect_faces_bgr, center_face
+│   └── ai_utils.py                  ← liveness(), landmarks(), embedding(), hash_password()
 │
-├── ai/                           ← AI / Face recognition
-│   ├── __init__.py
-│   ├── models.py                 ← Load dlib singleton (shape_pred, face_encoder)
-│   ├── face_utils.py             ← Detection MediaPipe (detect_faces_bgr, center_face) — chuyển từ root vào đây
-│   └── ai_utils.py               ← liveness(), landmarks(), embedding(), hash_password()
+├── gui/
+│   ├── kiosk_app.py                 ← Class KioskApp — UI + state machine
+│   └── theme.py                     ← Màu sắc, font, SCREEN_W/H, VERIFY_FRAMES
 │
-├── gui/                          ← Giao diện kiosk
-│   ├── __init__.py
-│   ├── kiosk_app.py              ← Class KioskApp (UI + state machine)
-│   └── theme.py                  ← C{}, fonts, SCREEN_W/H, VERIFY_FRAMES, ...
+├── public/                          ← Web frontend
+│   ├── landing.html                 ← Entry point (3 portal)
+│   ├── login.html                   ← Đăng nhập admin
+│   ├── index.html                   ← Admin dashboard (5 tab)
+│   ├── register.html                ← Sinh viên đăng ký tài khoản
+│   ├── user-dashboard.html          ← Sinh viên tra cứu tủ + yêu cầu trả tủ (OTP)
+│   ├── emailjs_config.js            ← EmailJS credentials (KHÔNG commit git)
+│   └── 404.html
 │
-├── public/                       ← Web frontend (giữ nguyên)
-│   ├── landing.html              ← Trang chủ điều hướng (entry point)
-│   ├── login.html                ← Đăng nhập admin
-│   ├── index.html                ← Admin dashboard (4 tab)
-│   ├── register.html             ← Sinh viên đăng ký tài khoản
-│   ├── user-dashboard.html       ← Sinh viên tra cứu tủ
-│   ├── 404.html                  ← Trang lỗi Not Found
-│   
-│
-├── kiosk_gui.py                  ← Entry point kiosk — KioskApp + auto-cleanup + pending-expire + heartbeat daemon thread
-├── .env                          ← Gmail credentials (KHÔNG commit git — xem .env.example)
-├── main_gui.py                   ← ⚠️ GUI tkinter nhận diện khuôn mặt ban đầu (prototype cũ) — ĐÃ được thay thế hoàn toàn bởi gui/kiosk_app.py, giữ lại để tham chiếu, KHÔNG dùng trong production
-├── sync_listener.py              ← Lắng nghe Firebase realtime (Websocket Push)
-├── sync_tool.py                  ← Tool đồng bộ thủ công
-├── IntelligentLocker.db          ← DB chính (Users, Lockers, Logs)
-├── blaze_face_short_range.tflite ← MediaPipe model
-├── private_key_lockers.json      ← Service Account Key (KHÔNG commit git)
-├── firebase.json / .firebaserc   ← Cấu hình Firebase Hosting
+├── kiosk_gui.py                     ← Entry point — chạy KioskApp + 3 daemon threads
+├── sync_listener.py                 ← Firebase Websocket listener (realtime)
+├── sync_tool.py                     ← Đồng bộ 2 chiều thủ công
+├── IntelligentLocker.db             ← SQLite DB chính
+├── blaze_face_short_range.tflite    ← MediaPipe model
+├── app_password.env                 ← Gmail credentials (KHÔNG commit git)
+├── private_key_lockers.json         ← Firebase Service Account (KHÔNG commit git)
+└── firebase.json / .firebaserc      ← Firebase Hosting config
+```
 
+### ❌ Files dư thừa (có thể xóa)
 
-
-### ✅ File gốc đã xóa (22/05/2026)
-| File | Thay bởi |
-|---|---|
-| `locker_db.py` (root) | Phân tách thành `core/db.py`, `core/user_db.py`, `core/locker_db.py`, `core/log_db.py`, `core/firebase.py` |
-| `face_utils.py` (root) | Chuyển vào `ai/face_utils.py` |
-
-### ❌ Files đã dư thừa — có thể xóa
 | File | Lý do |
 |---|---|
-| `secure_db.py` | Thay bởi `locker_db.py` |
-| `verify.py` | Thay bởi `verify_with_liveness.py` |
-| `face_db.enc` | Đã migrate sang `IntelligentLocker.db` |
-| `db.key` | Key cho `face_db.enc` cũ |
-| `audit.db` | Log cũ → đã có LockerLog + FaceLog trong DB chính |
-| `face_db_pkl.bak` | Backup file gốc ban đầu |
-| `collect_liveness.py` | Chỉ dùng khi training, không cần production |
-Các file liveness_check.py, enroll.py, verify_with_liveness.py đã được gộp luồng trực tiếp vào hệ thống chính để tối ưu hiệu suất.
+| `secure_db.py` | Thay bởi `core/locker_db.py` |
+| `verify.py` | Gộp vào pipeline chính |
+| `face_db.enc` + `db.key` | Đã migrate sang `IntelligentLocker.db` |
+| `audit.db` | Thay bởi `LockerLog` + `FaceLog` trong DB chính |
+| `face_db_pkl.bak` | Backup cũ |
+| `collect_liveness.py` | Chỉ dùng khi training |
+| `main_gui.py` | ⚠️ Prototype cũ — thay bởi `gui/kiosk_app.py` |
+
+> `liveness_check.py`, `enroll.py`, `verify_with_liveness.py` đã được gộp trực tiếp vào pipeline chính.
+
 ---
 
 ## 🏗 Kiến trúc hệ thống
 
-### Pipeline xác thực (verify_with_liveness.py)
+### Pipeline xác thực khuôn mặt
+
 ```
 Thread 1 — Camera (asyncio + winsdk)
-    ↓ Frame Queue (maxsize=1, luôn frame mới nhất)
+    ↓ Frame Queue (maxsize=1 — luôn lấy frame mới nhất)
 Thread 2 — AI
-    • IR liveness check (liveness_check.py)
-    • MediaPipe face detect (face_utils.py)
-    • dlib ResNet embedding
+    • IR liveness check  (rule-based mean/std)
+    • MediaPipe BlazeFace detect
+    • dlib ResNet 128-D embedding
     ↓ Result Queue (maxsize=1)
-Thread 3 — UI (main thread)
-    • cv2.imshow luôn ~30 FPS
+Thread 3 — UI (main thread tkinter)
+    • Render ~30 FPS
     • Draw overlay + consecutive counter
-    • Rate limit check
-    → PASS → open_locker() → ghi LockerLog + push Firebase
+    • Rate limit check (max 5 fails → lockout 60s)
+    → PASS → open_locker() → SQLite + Firebase
 ```
 
-Firebase Sync Architecture (Tối ưu Chi phí & Tốc độ)
-Local → Firebase: Trực tiếp qua locker_db.py khi có sự kiện ở tủ đồ (mở/gán/trả tủ).
+### Kiosk State Machine
 
-Firebase → Local (Realtime): Sử dụng sync_listener.py (Websocket push). Firebase tự đẩy event về Local khi Web Admin duyệt user (~0ms delay). Tuyệt đối không dùng polling để tiết kiệm tài nguyên và chi phí đọc dữ liệu.
+```
+S_IDLE
+  └─ nhập MSSV ──────────────────────────────────► S_FACE_MSSV
+                                                        │
+                                          camera bật, xác thực khuôn mặt
+                                                        │
+                                                   _after_login()
+                                                   ┌────┴────┐
+                                              có tủ          chưa có tủ
+                                                │                │
+                                        S_LOCKER_MENU     _show_locker_picker()
+                                        ┌───────┴──────┐
+                                   📦 Gửi đồ      🔓 Trả tủ
+                                        │               │
+                                  open_locker()   confirm 2 bước
+                                                  → release_locker()
+                                                  → LOCKER_DELETE_LOG
+```
 
-Firebase ↔ Local (Khởi động): Sử dụng sync_tool.py để kéo/đẩy đối chiếu dữ liệu toàn diện khi hệ thống vừa khởi động lại hoặc mất mạng lâu.
+### Firebase Sync Architecture
+
+```
+Kiosk / SQLite ──────────────────────────────────► Firebase
+   (locker_db.py inline khi open/assign/release)
+
+Firebase ────────────────────────────────────────► SQLite
+   (sync_listener.py — Websocket push, ~0ms delay)
+   Lắng nghe: /users · /lockers · /otp_requests · /verify_attempts
+
+Firebase ◄──────────────────────────────────────► SQLite
+   (sync_tool.py — chạy 1 lần khi boot hoặc sau mất mạng)
+```
+
+> **Không dùng polling** — toàn bộ Firebase → Local dùng Websocket push để tiết kiệm chi phí đọc.
+
+### Luồng OTP trả tủ (server-side verify)
+
+```
+Web client              Firebase              sync_listener.py
+    │                      │                        │
+    │── otp_requests/{m} ──►│                        │
+    │                      │──── on_otp_request ───►│
+    │                      │                        │ sinh OTP
+    │                      │                        │ lưu SHA-256(OTP) → otp_tokens
+    │                      │                        │ gửi OTP gốc qua email
+    │                      │                        │
+    │  [user nhập OTP]     │                        │
+    │── verify_attempts ───►│                        │
+    │                      │──── on_verify_attempt ►│
+    │                      │                        │ so sánh hash
+    │                      │                        │ rate limit (max 5 lần)
+    │                      │◄── verify_results ─────│
+    │◄── onValue ──────────│                        │
+    │   {ok, reason}       │                        │
+```
+
+> Client **không bao giờ đọc** `otp_tokens` — chỉ server biết hash.
 
 ### Luồng điều hướng Web
-```
-Truy cập web (index.html)
-    → chưa login  → landing.html (3 card)
-    → đã login    → index.html (dashboard)
 
+```
 landing.html
-    → Đăng ký     → register.html
-    → Admin       → login.html → index.html
-    → Tra cứu     → user-dashboard.html
-    → Đã login    → hiện admin bar (Vào Dashboard / Đăng xuất)
+  ├─► register.html       (sinh viên đăng ký)
+  ├─► login.html          (admin)
+  │     └─► index.html    (dashboard 5 tab)
+  └─► user-dashboard.html (tra cứu tủ, yêu cầu trả tủ)
 ```
 
-### Tech Stack
-| Tầng | Công nghệ | Lý do chọn |
+### Daemon Threads trong kiosk_gui.py
+
+```python
+threading.Thread(target=_heartbeat_loop,       daemon=True).start()  # mỗi 30s
+threading.Thread(target=_cleanup_loop,         daemon=True).start()  # mỗi 1h
+threading.Thread(target=_pending_expire_loop,  daemon=True).start()  # mỗi 6h
+app.after(5_000, _drain_warn_queue, app)                             # tkinter-safe
+```
+
+| Thread | Chu kỳ | Chức năng |
 |---|---|---|
-| Face Detection | Google MediaPipe BlazeFace | 5-15ms/frame trên CPU, góc rộng |
-| Face Embedding | dlib ResNet 128-D | Tương thích DB hiện có |
-| IR Liveness | Rule-based (mean/std) | Không cần train, không cần GPU |
-| Database | SQLite (IntelligentLocker.db) | Nhẹ, offline, đủ dùng |
-| Cloud Sync | Firebase Realtime DB + Admin SDK | Realtime, không cần pyrebase |
-| GUI | tkinter + PIL | Có sẵn, nhẹ, mượt |
-| Camera | winsdk (Windows Media Capture) | Truy cập IR camera Intel RealSense |
+| `_heartbeat_loop` | 30s | Ghi `/kiosk_status/last_seen` lên Firebase |
+| `_cleanup_loop` | 1h | Thu hồi tủ idle ≥7 ngày, cảnh báo ngày 6 |
+| `_pending_expire_loop` | 6h | Xóa tài khoản chờ duyệt quá hạn, gửi mail |
 
 ---
 
-## 📐 Schema IntelligentLocker.db (FINAL)
+## 🌐 Web Admin
 
-### ERD — Quan hệ giữa các bảng
+### Các trang
+
+| Trang | Mô tả | Auth |
+|---|---|---|
+| `landing.html` | Entry point — điều hướng 3 portal | Không |
+| `login.html` | Đăng nhập admin | Không |
+| `index.html` | Dashboard admin (5 tab) | Bắt buộc |
+| `register.html` | Sinh viên tự đăng ký tài khoản | Không |
+| `user-dashboard.html` | Tra cứu tủ, idle warning, yêu cầu trả tủ | Không |
+
+### 5 Tab trong index.html
+
+| Tab | Nội dung |
+|---|---|
+| 🏠 Trang Chủ | 5 stat cards: Đã duyệt · Chờ duyệt · Tủ trống · Tủ đang dùng · **Kiosk status** |
+| 👥 Sinh Viên | Bảng users · tìm kiếm · duyệt/khóa · gán tủ · xóa thẻ thủ công |
+| 🔒 Tủ Khóa | Grid L01–L09 · idle indicator 🟡🔴 · detail modal |
+| 📋 Nhật Ký | 50 events gần nhất · Export CSV |
+| 🗑 Lịch Sử Tủ | Toàn bộ LOCKER_DELETE_LOG · filter · Export CSV |
+
+**Tính năng nổi bật:**
+- Kiosk status badge realtime (Online 🟢 / Offline 🔴) — hiện trên mọi tab
+- Toast + Browser notification khi có yêu cầu trả tủ mới
+- Idle indicator: 🟡 5–6 ngày · 🔴 ≥7 ngày (có thể thu hồi)
+- Auto-expire thẻ pending sau N ngày (cấu hình qua modal ⚙️)
+- Dark mode · Export CSV · Material Symbols Rounded icons
+
+### Lưu ý kỹ thuật
+
+```bash
+# Bắt buộc chạy qua HTTP — Firebase Auth không hoạt động với file://
+py -m http.server 5500
+```
+
+- Hàm trong `<script type="module">` phải gán vào `window.xxx` để inline event gọi được
+- `onValue` listeners bọc trong `startDataListeners()` — chỉ gọi sau `onAuthStateChanged`
+
+---
+
+## 📐 Database Schema
+
+### ERD
 
 ```mermaid
 erDiagram
@@ -139,7 +255,6 @@ erDiagram
         TEXT password
         TEXT email
     }
-
     Lockers {
         TEXT locker_id PK
         TEXT size
@@ -148,7 +263,6 @@ erDiagram
         TEXT assigned_date
         TEXT last_open
     }
-
     LockerLog {
         INTEGER id PK
         TEXT timestamp
@@ -157,7 +271,6 @@ erDiagram
         TEXT mssv
         TEXT name
     }
-
     FaceLog {
         INTEGER id PK
         TEXT timestamp
@@ -165,7 +278,6 @@ erDiagram
         TEXT mssv
         TEXT name
     }
-
     LOCKER_DELETE_LOG {
         INTEGER ID PK
         TEXT MSSV
@@ -174,29 +286,21 @@ erDiagram
         TEXT REASON
     }
 
-    Users ||--o{ Lockers         : "chiếm (current_mssv)"
-    Lockers ||--o{ LockerLog     : "ghi nhật ký (locker_id)"
+    Users ||--o{ Lockers     : "current_mssv"
+    Lockers ||--o{ LockerLog : "locker_id"
 ```
 
-> **Ghi chú quan hệ:**
-> - `Lockers.current_mssv` → `Users.mssv` (FK — NULL khi tủ trống)
-> - `LockerLog.locker_id` → `Lockers.locker_id` (FK)
-> - `LOCKER_DELETE_LOG` và `FaceLog` không có FK cứng — ghi độc lập
+### Chi tiết bảng
 
----
-
-### Chi tiết từng bảng
-
-| Bảng | Rows hiện tại | Sync Firebase | Mô tả |
-|---|---|---|---|
-| `Users` | 8 | ✅ `/users` | Tài khoản sinh viên + admin |
-| `Lockers` | 9 | ✅ `/lockers` | Trạng thái 9 tủ (L01–L09) |
-| `LockerLog` | 74 | ✅ `/logs` | Mọi sự kiện mở/gán/trả tủ |
-| `FaceLog` | 6 | ❌ local only | Đăng ký / xác thực / thất bại khuôn mặt |
-| `LOCKER_DELETE_LOG` | 2 | ✅ `/locker_delete_logs` | Lịch sử thu hồi tủ |
+| Bảng | Sync Firebase | Mô tả |
+|---|---|---|
+| `Users` | ✅ `/users` | Tài khoản sinh viên + admin |
+| `Lockers` | ✅ `/lockers` | Trạng thái 9 tủ L01–L09 |
+| `LockerLog` | ✅ `/logs` | Mọi sự kiện OPEN / ASSIGN / RELEASE |
+| `FaceLog` | ❌ local only | FACE_REGISTER / FACE_VERIFY / FACE_FAIL |
+| `LOCKER_DELETE_LOG` | ✅ `/locker_delete_logs` | Lịch sử thu hồi tủ |
 
 ```sql
--- ── Users ──────────────────────────────────────────────────────────────────
 Users (
     mssv           TEXT PRIMARY KEY,
     name           TEXT NOT NULL,
@@ -204,21 +308,19 @@ Users (
     is_approved    INTEGER DEFAULT 0,         -- 0 | 1
     has_face       INTEGER DEFAULT 0,         -- 0 | 1
     face_embedding BLOB,                      -- numpy array pickle'd (128-D float64)
-    password       TEXT,                      -- bcrypt hash
+    password       TEXT,                      -- SHA-256 hash
     email          TEXT DEFAULT ''
 )
 
--- ── Lockers ─────────────────────────────────────────────────────────────────
 Lockers (
     locker_id     TEXT PRIMARY KEY,           -- 'L01'...'L09'
     size          TEXT NOT NULL,              -- 'small' | 'big'
     status        TEXT DEFAULT 'empty',       -- 'empty' | 'occupied' (luôn lowercase)
     current_mssv  TEXT REFERENCES Users(mssv),
     assigned_date TEXT DEFAULT '',            -- 'YYYY-MM-DD HH:MM:SS' | ''
-    last_open     TEXT DEFAULT ''             -- 'YYYY-MM-DD HH:MM:SS' | '' — cập nhật mỗi OPEN_LOCKER
+    last_open     TEXT DEFAULT ''             -- 'YYYY-MM-DD HH:MM:SS' | ''
 )
 
--- ── LockerLog — sync Firebase /logs ─────────────────────────────────────────
 LockerLog (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL,
@@ -228,27 +330,14 @@ LockerLog (
     name      TEXT
 )
 
--- ── FaceLog — local only ─────────────────────────────────────────────────────
-FaceLog (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    event     TEXT NOT NULL,                  -- FACE_REGISTER | FACE_VERIFY | FACE_FAIL
-    mssv      TEXT,
-    name      TEXT
-)
-
--- ── LOCKER_DELETE_LOG — local + sync Firebase /locker_delete_logs ────────────
 LOCKER_DELETE_LOG (
     ID          INTEGER PRIMARY KEY AUTOINCREMENT,
     MSSV        TEXT NOT NULL,
     LOCKER_ID   TEXT NOT NULL,
-    DELETE_TIME TEXT NOT NULL,                -- 'YYYY-MM-DD HH:MM:SS'
-    REASON      TEXT NOT NULL                 -- 'student_release' | 'auto_inactive_7days'
-                                              -- | 'admin_force' | 'admin_deactivate'
-)
+    DELETE_TIME TEXT NOT NULL,
+    REASON      TEXT NOT NULL                 -- student_release | auto_inactive_7days
+)                                             -- | admin_force | admin_deactivate | admin_delete_card
 ```
-
-
 
 ---
 
@@ -259,10 +348,17 @@ LOCKER_DELETE_LOG (
 /lockers/{L01}                   → status, current_mssv, size, last_open, assigned_date
 /logs/{push_id}                  → time, event, locker_id, mssv, name
 /locker_delete_logs/{push_id}    → mssv, locker_id, delete_time, reason
-/release_requests/{mssv}         → mssv, locker_id, requested_at, status ('pending' | 'done')
+/release_requests/{mssv}         → mssv, locker_id, requested_at, status
+/kiosk_status/last_seen          → ISO timestamp (heartbeat mỗi 30s)
+/kiosk_status/connected          → bool
+/otp_requests/{mssv}             → email, name, requested (web → kiosk)
+/otp_tokens/{mssv}               → hashed_code, expires_at, attempts (kiosk only)
+/verify_attempts/{mssv}          → code, ts (web → kiosk)
+/verify_results/{mssv}           → ok, reason, ts (kiosk → web)
 ```
 
-### Security Rules (FINAL — cập nhật 03/06/2026)
+### Security Rules (cập nhật 05/06/2026)
+
 ```json
 {
   "rules": {
@@ -274,808 +370,160 @@ LOCKER_DELETE_LOG (
         ".write": "auth != null || !data.exists()"
       }
     },
-    "lockers": {
-      ".read": true,
-      ".write": "auth != null"
-    },
-    "logs": {
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
-    "locker_delete_logs": {
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
+    "lockers":           { ".read": true, ".write": "auth != null" },
+    "logs":              { ".read": "auth != null", ".write": "auth != null" },
+    "locker_delete_logs":{ ".read": "auth != null", ".write": "auth != null" },
+    "kiosk_status":      { ".read": true, ".write": "auth != null" },
     "release_requests": {
       ".read": "auth != null",
-      "$mssv": {
-        ".read": "auth != null",
-        ".write": true
-      }
+      "$mssv": { ".read": true, ".write": true }
+    },
+    "otp_requests": {
+      "$mssv": { ".read": "auth != null", ".write": true }
+    },
+    "otp_tokens": {
+      "$mssv": { ".read": "auth != null", ".write": "auth != null" }
+    },
+    "verify_attempts": {
+      "$mssv": { ".read": "auth != null", ".write": true }
+    },
+    "verify_results": {
+      "$mssv": { ".read": true, ".write": "auth != null" }
     }
   }
 }
 ```
 
-**Giải thích:**
-- `users` cấp cha: `auth != null` để admin đọc toàn bộ danh sách; `$mssv`: `true` để sinh viên tra cứu từng người không cần đăng nhập
-- `/users/$mssv` ghi: `auth != null || !data.exists()` — sinh viên vãng lai tự đăng ký tài khoản mới được, nhưng không thể ghi đè tài khoản đã tồn tại
-- `/lockers` — ai cũng đọc được; chỉ admin ghi
-- `/logs` — chỉ admin đọc/ghi
-- `/release_requests` — sinh viên ghi được (gửi yêu cầu trả tủ); chỉ admin đọc được
-- `/locker_delete_logs` — chỉ admin đọc/ghi; Python push khi trả tủ (student_release / auto_inactive_7days / admin_force / admin_deactivate)
+**Giải thích quan trọng:**
+- `otp_tokens` — chỉ Admin SDK đọc/ghi; client không bao giờ thấy hash
+- `verify_attempts` — client ghi code nhập vào; server verify
+- `verify_results` — client đọc kết quả; chỉ server ghi
+- `/users/$mssv` ghi: `!data.exists()` cho phép sinh viên tự đăng ký lần đầu
 
-### Firebase Sync — 2 chiều
-| Chiều | Trigger | Code |
-|---|---|---|
-| Local → Firebase | open/assign/release locker | `locker_db.py` (inline) |
-| Firebase → Local | web admin duyệt user, trả tủ | `sync_listener.py` (daemon thread) |
+### Sync Rules ưu tiên
 
-`sync_listener.py` lắng nghe:
-- `/users/{mssv}` → `UPDATE Users SET name, is_approved, has_face, email, password`
-- `/lockers/{lid}/status = 'empty'` → `UPDATE Lockers SET status='empty', current_mssv=NULL`
-- `/lockers/{lid}/last_open` → `UPDATE Lockers SET last_open` (nếu Firebase mới hơn local)
-
-Khởi động từ `main_gui.py`:
-```python
-import sync_listener
-sync_listener.start()   # trước mainloop()
-```
-
----
-
-## 🌐 Web Admin — Các trang
-
-| Trang | Mô tả | Auth |
-|---|---|---|
-| `landing.html` | Entry point, điều hướng 3 portal | Không |
-| `login.html` | Đăng nhập admin | Không |
-| `index.html` | Dashboard: Users, Lockers, Logs, Export CSV | Bắt buộc |
-| `register.html` | Sinh viên đăng ký tài khoản mới | Không |
-| `user-dashboard.html` | Tra cứu tủ theo MSSV, xem tiến trình | Không |
-
-### Tính năng Web Admin (index.html)
-- 4 nav tabs: **Trang Chủ | Sinh Viên | Tủ Khóa | Nhật Ký | Lịch Sử Tủ**
-  - **Trang Chủ (Home):** Dashboard với 4 stat cards (Sinh viên đã duyệt, Chờ duyệt, Tủ trống, Tủ đang dùng)
-  - **Sinh Viên (Users):** Danh sách user + tìm kiếm + duyệt/khóa thẻ + chi tiết modal + gán tủ admin
-  - **Tủ Khóa (Lockers):** Sơ đồ 6 cột + hiện trạng + idle-days warning tag
-  - **Nhật Ký (Logs):** Toàn bộ sự kiện tủ (OPEN/ASSIGN/RELEASE) — 50 events mới nhất
-  - **Lịch Sử Tủ (Locker Delete Log):** Ghi lại mọi lần xóa sinh viên khỏi tủ (student_release / auto_inactive_7days / admin_force)
-- Export CSV users/logs/delete-log
-- Dark mode toggle (Light / Dark / Device Default) — lưu localStorage
-- Badge số trên icon Nhật Ký khi có log mới
-- Browser notification khi sinh viên đăng ký khuôn mặt
-- Material Symbols Rounded icons
-- Idle days indicator: 
-  - 5-6 ngày: 🟡 Sắp đến hạn (yellow tag)
-  - ≥7 ngày: 🔴 Có thể thu hồi (red tag + warning modal)
-
-### Chi tiết từng Tab (5 tabs trong index.html)
-
-#### 0️⃣ Home Tab (tab-home)
-- **Stats Grid** (4 cards động)
-  - Sinh viên đã duyệt
-  - Chờ duyệt (notification badge count)
-  - Tủ trống
-  - Tủ đang dùng
-
-#### 1️⃣ Users Tab (tab-users)
-- **Search Box** (tìm MSSV hoặc tên)
-- **Users Table** (tất cả users)
-  - Columns: MSSV | Tên | Email | Khuôn Mặt | Trạng Thái | Hành Động
-  - Khuôn Mặt: 🟢 Đã có / 🔴 Chưa có
-  - Trạng Thái: 🟢 Đã duyệt / 🔴 Chờ duyệt
-  - Actions: Chi tiết | Duyệt/Khóa thẻ
-- **User Detail Modal** (wide, 500px)
-  - Grid: MSSV, Tên, Email, Ngày đăng ký, Khuôn Mặt, Trạng Thái
-  - Tủ đang mượn, Vai trò
-  - Buttons: Gán tủ, Trả tủ
-- **Assign Locker Modal**
-  - Dropdown tủ trống (lọc status='empty')
-  - Confirm/Cancel
-
-#### 2️⃣ Lockers Tab (tab-lockers)
-- **Locker Grid** (6 cột, responsive)
-  - Layout cứng định (L01–L09)
-  - Small: 2 col, 110px
-  - Large: 3 col, 160px
-  - Control box: Main Controller (blue gradient)
-  - Status: 🟢 Trống / 🔴 Đang sử dụng
-  - Idle indicator:
-    - 0–4 ngày: số ngày (xanh)
-    - 5–6 ngày: 🟡 X ngày idle
-    - ≥7 ngày: 🔴 X ngày idle
-  - Click: detail modal
-- **Locker Detail Modal**
-  - Tủ, Trạng Thái, Người Dùng (MSSV), Gán từ, Lần Mở Cuối, Số Ngày Idle
-  - Color + warning cho ≥7 ngày
-
-#### 3️⃣ Logs Tab (tab-logs)
-- **Export CSV button**
-- **Logs Table** (50 events gần nhất)
-  - Columns: Thời Gian | MSSV | Tên | Tủ | Sự Kiện
-  - Event colors (EVENT_MAP):
-    - 🔓 Mở tủ (OPEN_LOCKER) — #007bff
-    - 🆕 Gán tủ mới (ASSIGN_LOCKER) — #6f42c1
-    - 🔒 Trả tủ (RELEASE_LOCKER) — #dc3545
-    - 👤 Đăng ký khuôn mặt (FACE_REGISTER) — #28a745
-  - DESC by time
-
-#### 4️⃣ Locker Delete Log Tab (tab-delete-log) — NEW ⭐
-- **Export CSV button** → `locker_delete_log_YYYY-MM-DD.csv`
-- **Search Box** (tìm MSSV / tủ)
-- **Delete Log Table**
-  - Columns: Thời Gian | MSSV | Tủ | Lý Do
-  - Reason mapping:
-    - ✅ Sinh viên tự trả (`student_release`)
-    - 🕐 Hệ thống 7 ngày idle (`auto_inactive_7days`)
-    - 🔒 Admin ép trả (`admin_force`)
-    - 👤 Vô hiệu hóa tài khoản (`admin_deactivate`)
-  - Source: Firebase `/locker_delete_logs` (realtime onValue)
-
-### Lưu ý kỹ thuật Web
-- **Chạy qua HTTP**, không mở file:// trực tiếp (Firebase Auth không hoạt động)
-- Local dev: `py -m http.server 5500` → `http://localhost:5500`
-- Hàm trong `<script type="module">` cần gán vào `window.xxx` để HTML inline event gọi được
-- `logs` yêu cầu auth → `user-dashboard.html` bọc riêng try/catch, không block phần còn lại
-# 1. Chạy Web Local
-cd public
-py -m http.server 5500
-
-# 2. Đồng bộ dữ liệu toàn diện (Chỉ chạy 1 lần lúc bật máy)
-py -3.11 sync_tool.py
-
-# 3. Khởi chạy GUI tủ đồ (Tự động kích hoạt sync_listener.py chạy ngầm)
-py -3.11 main_gui.py
----
-
-## 🖥 GUI tkinter (main_gui.py) — 4 Tab
-
-| Tab | Chức năng |
+| Trường | Quy tắc |
 |---|---|
-| 🔍 Xác thực | Camera live + IR thumbnail + verify |
-| ⚙ Đăng ký | Form MSSV + camera + chụp shot + lưu embedding |
-| 👥 Quản lý | Danh sách user + search + trả tủ |
-| 📋 Log | LockerLog + FaceLog + filter + xuất CSV |
+| `name`, `is_approved`, `role` | Firebase thắng |
+| `has_face`, `face_embedding` | Local thắng (biometric không bị ghi đè từ web) |
+| `Lockers.last_open` | Lấy giá trị **mới hơn** (ISO string compare) |
+| Xóa tài khoản | Firebase thắng → xóa SQLite + trả tủ liên quan |
 
 ---
 
-## 🐛 Lỗi đã fix
+## ⚙️ Cấu hình
 
-| Lỗi | Nguyên nhân | Fix |
+### .env / app_password.env
+
+| Biến | Bắt buộc | Mô tả |
 |---|---|---|
-| `dlib compute_face_descriptor` TypeError | dlib 20.x đổi API | Dùng `dlib.get_face_chip()` trước |
-| `mp.solutions` AttributeError | MediaPipe >= 0.10 bỏ API cũ | Dùng `mediapipe.tasks.python.vision` |
-| Camera timeout `wait_both` | asyncio.Event deadlock | Đổi sang polling |
-| `no such column: rfid` | DB đã bỏ rfid | Bỏ khỏi query + unpack |
-| Firebase 404 Not Found | Database ở region Asia | Đổi URL sang `asia-southeast1` |
-| Locker tạo thành `LL01` | `locker_id` đã là `"L01"`, code thêm `"L"` prefix | Bỏ format string thừa |
-| `tab-title` null | `<h2>` thiếu `id="tab-title"` | Thêm id vào HTML |
-| `lookup is not defined` | Hàm trong module không expose ra global | Đổi thành named function + `window.lookup=lookup` |
-| Firebase không đọc được `/users` | Rule `$mssv.read:true` chỉ cho đọc node lẻ | Chuyển `.read:true` lên cấp `/users` |
-| Web không kết nối Firebase | Chạy qua `file://` protocol | Dùng local HTTP server |
-| `ModuleNotFoundError: No module named face_utils` | `ai/ai_utils.py` import kiểu root sau khi refactor | Đổi thành `from ai.face_utils import center_face` |
-| `db_verify_password is not defined` | Tên hàm cũ sau khi tách `core/user_db.py` | Đổi thành `get_user_by_password()` |
-| `db_register_user is not defined` | Tên hàm cũ sau khi tách `core/user_db.py` | Đổi thành `register_user()` |
-| `AttributeError: pose_predictor_68_point_model_location` | Tên hàm sai trong `face_recognition_models` | Đổi thành `pose_predictor_model_location()` |
-| Lambda closure bug trong locker grid picker | `lambda: assign_locker(lid)` capture `lid` của vòng lặp cuối | Đổi thành `lambda l=lid: ...` |
+| `MAIL_SENDER` | Không | Gmail dùng để gửi OTP và mail thông báo |
+| `MAIL_PASSWORD` | Không | Gmail App Password (16 ký tự) — tạo tại myaccount.google.com/apppasswords |
+| `MAIL_SENDER_NAME` | Không | Tên hiển thị trong email (mặc định: "Smart Locker — HCMUTE") |
 
----
+> Nếu chưa cấu hình → tính năng mail tắt im lặng, hệ thống vẫn hoạt động bình thường.
 
-## ⚙ Cài đặt thư viện
+### emailjs_config.js (public/)
 
-```bash
-py -3.11 -m pip install opencv-python numpy dlib mediapipe Pillow firebase-admin scikit-image scikit-learn winsdk python-dotenv
+```js
+window.EMAILJS_CONFIG = {
+  publicKey : "YOUR_PUBLIC_KEY",
+  serviceId : "YOUR_SERVICE_ID",
+  templateId: "YOUR_TEMPLATE_ID"
+};
 ```
 
-> **dlib:** Cài binary wheel từ https://github.com/z-mahmud22/Dlib_Windows_Python3.x (Python 3.11 + Windows)
+> Dùng làm fallback gửi OTP khi Kiosk offline (`last_seen > 90s`).
 
+### .gitignore
+
+```
+app_password.env
+private_key_lockers.json
+emailjs_config.js
+.warn_flags/
+IntelligentLocker.db
+```
+
+---
 
 ## 📌 Tham số quan trọng
 
-| Tham số | File | Giá trị | Ý nghĩa |
+| Tham số | Module | Giá trị | Ý nghĩa |
 |---|---|---|---|
-| `THRESHOLD` | verify_with_liveness.py | `0.45` | Ngưỡng khoảng cách embedding |
-| `VERIFY_FRAMES` | verify_with_liveness.py | `3` | Số frame liên tiếp cần PASS |
-| `MAX_FAILS` | locker_db.py | `5` | Số lần fail trước khi khóa |
-| `LOCKOUT_SECS` | locker_db.py | `60` | Thời gian khóa (giây) |
-| `BRIGHT_THRESHOLD` | liveness_check.py | `220` | IR mean > → FAKE |
-| `DARK_THRESHOLD` | liveness_check.py | `30` | IR mean < → FAKE |
-| `TEXTURE_MIN` | liveness_check.py | `8.0` | IR std < → FAKE |
-| `TARGET_ENROLL_SHOTS` | main_gui.py | `5` | Số ảnh chụp khi enroll |
+| `THRESHOLD` | `ai/ai_utils.py` | `0.45` | Ngưỡng khoảng cách embedding khuôn mặt |
+| `VERIFY_FRAMES` | `gui/theme.py` | `3` | Số frame liên tiếp cần PASS |
+| `MAX_FAILS` | `core/locker_db.py` | `5` | Số lần fail trước khi lockout |
+| `LOCKOUT_SECS` | `core/locker_db.py` | `60` | Thời gian lockout (giây) |
+| `BRIGHT_THRESHOLD` | `ai/ai_utils.py` | `220` | IR mean > → FAKE (ảnh in) |
+| `DARK_THRESHOLD` | `ai/ai_utils.py` | `30` | IR mean < → FAKE (che camera) |
+| `TEXTURE_MIN` | `ai/ai_utils.py` | `8.0` | IR std < → FAKE |
+| `KIOSK_ONLINE_SECS` | `user-dashboard.html` | `90` | last_seen < 90s → Kiosk ONLINE |
+| `OTP_MAX_ATTEMPTS` | `sync_listener.py` | `5` | Số lần thử OTP sai tối đa |
+| `PENDING_EXPIRE_DAYS` | `kiosk_gui.py` | `7` | Ngày tự xóa tài khoản chờ duyệt |
+| `PENDING_WARN_DAYS` | `kiosk_gui.py` | `2` | Ngày gửi mail cảnh báo trước khi xóa |
 
 ---
 
-## 🗺 Bước tiếp theo
+## 🔄 Sync Tool (sync_tool.py)
 
-### Ưu tiên 2 — Ngắn hạn
-- [ ] **Multi-user enroll**: hướng dẫn 5 góc mặt khác nhau
-- [ ] **Feedback âm thanh**: beep khi PASS/FAIL
-- [ ] **Xóa node LL01–LL09** trên Firebase Console (bug cũ)
-- [ ] **Deploy Firebase Hosting** thay local server
-
-### Ưu tiên 3 — Dài hạn
-- [ ] **ArcFace** thay dlib ResNet (cần re-enroll)
-- [ ] **Đóng gói .exe** với PyInstaller
-- [ ] **REST API** (FastAPI) để web admin trigger verify
-
----
-
-*Được tổng hợp bởi Claude Sonnet 4.6 — Ngày làm việc: 19–27/05/2026*
-
-
----
-
-## 🔄 Sync Tool (sync_tool.py) — Đồng bộ 2 chiều thủ công
-
-### Mục đích
-Bổ sung cho `sync_listener.py` (realtime khi GUI đang chạy) — dùng để đối chiếu và bổ sung dữ liệu cho nhau khi 2 bên đã có thay đổi độc lập trước đó.
-
-### Cách dùng
 ```bash
-py -3.11 sync_tool.py          # Full sync 2 chiều (khuyến nghị khi khởi động)
+py -3.11 sync_tool.py          # Full sync 2 chiều (khuyến nghị khi boot)
 py -3.11 sync_tool.py --pull   # Chỉ Firebase → SQLite
 py -3.11 sync_tool.py --push   # Chỉ SQLite → Firebase
 ```
 
-### Quy tắc ưu tiên
-| Trường | Quyền |
-|---|---|
-| `name`, `is_approved`, `role` | Firebase thắng |
-| Xóa tài khoản | Firebase thắng (xóa SQLite + trả tủ liên quan) |
-| `has_face`, `face_embedding` | Local thắng (biometric không bị ghi đè) |
-| `Lockers` status/size | SQLite → push lên Firebase |
-
-### So sánh với sync_listener.py
-| | sync_listener.py | sync_tool.py |
+| | `sync_listener.py` | `sync_tool.py` |
 |---|---|---|
-| Kiểu | Realtime daemon thread | Chạy 1 lần theo lệnh |
-| Khi nào | GUI đang mở | Trước/sau phiên làm việc |
+| Kiểu | Realtime daemon (Websocket) | Chạy 1 lần theo lệnh |
+| Khi nào dùng | Luôn chạy cùng Kiosk | Lúc boot / sau mất mạng lâu |
 | Chiều | Firebase → SQLite | 2 chiều |
-| Dữ liệu quá khứ | Không bắt được | ✅ Đối chiếu toàn bộ |
-
-### Tích hợp vào main_gui.py (tùy chọn)
-```python
-import subprocess
-subprocess.Popen(["py", "-3.11", "sync_tool.py"],
-                 creationflags=subprocess.CREATE_NO_WINDOW)
-```
+| Bắt dữ liệu quá khứ | ❌ | ✅ |
 
 ---
 
-## 🔄 Changelog Refactor — 27/05/2026
+## 🛠 Tech Stack
 
-### Mục tiêu
-1. Thêm **tính năng Trả tủ** cho sinh viên — menu Gửi đồ / Trả tủ sau khi đăng nhập
-2. Thêm **auto-cleanup tủ 7 ngày idle** — warning ở ngày 6, delete ở ngày 7
-3. Thêm **LOCKER_DELETE_LOG** — ghi mọi lần xóa sinh viên khỏi tủ (local + web admin)
-4. Sửa **kiosk_app.py** — indent bug + release_locker() logic
-5. Sửa **kiosk_gui.py** — tích hợp auto-cleanup daemon thread
-
-### Các bước đã thực hiện
-
-#### Core Layer — locker_db.py
-- **log_locker_delete(mssv, locker_id, reason)** → ghi LOCKER_DELETE_LOG
-- **get_inactive_lockers(days)** → query JOIN tủ không OPEN_LOCKER ≥ N ngày
-- **auto_cleanup_inactive(warn_callback, delete_days=7, warn_days=6)** → 2 bước:
-  - Ngày 6: gọi warn_callback (popup warning trên UI)
-  - Ngày 7: release_locker() + log LOCKER_DELETE_LOG (reason=auto_inactive_7days)
-- **release_locker()** sửa → trả về `(bool, str)` + ghi LOCKER_DELETE_LOG (reason=student_release)
-- **get_all_lockers()** sửa WHERE clause → dùng LOWER(status)='empty'
-
-#### DB Layer — db.py
-- Thêm **CREATE TABLE LOCKER_DELETE_LOG** trong migrate()
-- Fix **status casing** → chuẩn hoá lowercase (idempotent)
-- Fix **email trailing whitespace** (User 22146436 có `\r\n`)
-
-#### GUI Layer — kiosk_app.py
-1. **New State: S_LOCKER_MENU** → sau xác thực, kiểm tra có tủ hay chưa
-2. **_after_login()** refactor:
-   - Chưa có tủ → _show_locker_picker() (chọn tủ từ sơ đồ)
-   - Đã có tủ → _show_locker_menu() (menu Gửi đồ / Trả tủ)
-3. **_show_locker_menu()** — 2 nút to rõ ràng:
-   - 📦 GỬI ĐỒ → _do_open_locker() → success screen
-   - 🔓 TRẢ TỦ → _confirm_release() → xác nhận 2 bước → gọi release_locker()
-4. Fix **indent bug** — toàn bộ state handlers giờ nằm trong class
-5. Fix **release_locker return value** — parse `(ok, msg)` tuple
-
-#### Entry Point — kiosk_gui.py
-- **_warn_callback()** → buffer queue, KHÔNG gọi tkinter từ daemon thread
-- **_drain_warn_queue()** → drain trên main thread qua `app.after()` (thread-safe)
-- **_cleanup_loop()** → daemon thread, mỗi 1 giờ
-- Threading setup:
-  ```python
-  threading.Thread(target=_cleanup_loop, daemon=True).start()
-  app.after(5_000, _drain_warn_queue, app)
-  ```
-
-#### Web Admin — index.html
-- **New Tab: Lịch Sử Tủ (tab-delete-log)**
-  - Read from Firebase `/locker_delete_logs` (realtime)
-  - Search + filter MSSV / locker_id
-  - Export CSV
-  - Reason mapping: student_release / auto_inactive_7days / admin_force / admin_deactivate
-- **Idle days indicator** (locker grid):
-  - 5–6 ngày: 🟡 yellow tag
-  - ≥7 ngày: 🔴 red tag (can release)
-  - Modal detail: "X ngày ⚠️ Có thể thu hồi" hoặc "X ngày ⚡ Sắp đến hạn"
-
-### Bug fix during implementation
-1. **release_locker() sai return type** — cũ không return, giờ `(bool, str)`
-2. **LOWER(status) query** — tránh bug casing từ migration cũ
-3. **Thread-safe tkinter warning** → buffer queue + after()
-4. **Auto-cleanup timing** → query ≥ warn_days, sau đó check ≥ delete_days
-
-### Flow mới hoàn chỉnh
-```
-Kiosk Đăng nhập
-    ↓ xác thực face
-    ├─ Chưa có tủ → chọn từ sơ đồ → open_locker() → success
-    └─ Đã có tủ → menu [📦 Gửi đồ | 🔓 Trả tủ]
-            ├─ Gửi đồ → open_locker() → success
-            └─ Trả tủ → confirm dialog → release_locker() → LOCKER_DELETE_LOG → idle
-
-Background (mỗi 1h)
-    auto_cleanup_inactive()
-        ├─ ≥6 ngày → warn_callback → popup (tkinter safe via queue)
-        └─ ≥7 ngày → release_locker() → LOCKER_DELETE_LOG (auto_inactive_7days)
-
-Web Admin Nhật Ký Tủ
-    View all LOCKER_DELETE_LOG entries
-    Lọc / xuất CSV
-```
-
----
-
-## 🔄 Changelog Web Admin — 28/05/2026
-
-### Mục tiêu
-1. Thêm **xóa thẻ sinh viên thủ công** từ bảng Sinh Viên
-2. Thêm **tự động xóa thẻ chờ duyệt quá hạn** (auto-expire)
-3. Tập trung toàn bộ cấu hình ngưỡng ngày vào **một modal Cài Đặt duy nhất**
-4. Loại bỏ hardcode `5` / `7` ngày — tất cả đọc từ config động
-
-### Thay đổi trong `index.html`
-
-#### Tính năng mới — Xóa thẻ thủ công
-- Thêm nút **🗑️ Xóa** (màu hồng) vào mỗi hàng trong bảng Sinh Viên
-- Có confirm dialog trước khi xóa
-- Nếu sinh viên đang mượn tủ → tự động trả tủ trước khi xóa
-- Ghi vào `/locker_delete_logs` với `reason: admin_delete_card`
-- Xóa node `users/{mssv}` khỏi Firebase
-
-#### Tính năng mới — Auto-expire thẻ chờ duyệt
-- Thẻ có `is_approved: false` quá N ngày (tính từ `registered_at`) → tự động xóa
-- Chạy mỗi lần load trang và lặp lại mỗi 1 giờ (`setInterval`)
-- Ghi log với `reason: auto_expired_pending`
-- N ngày cấu hình được qua modal Cài Đặt (xem bên dưới)
-
-#### Modal Cài Đặt tập trung (`#settingsModal`)
-Thay thế thanh cấu hình inline trước đây, truy cập qua icon ⚙️ trên right-bar:
-
-| Cài đặt | Mặc định | Mô tả |
+| Tầng | Công nghệ | Lý do chọn |
 |---|---|---|
-| Cảnh báo idle sau | 5 ngày | Tủ không mở quá N ngày → tag vàng 🟡 |
-| Tự động thu hồi tủ sau | 7 ngày | Tủ idle quá N ngày → tag đỏ 🔴, có thể thu hồi |
-| Tự xóa thẻ chờ duyệt sau | 7 ngày | Thẻ pending quá N ngày → auto-xóa |
-
-- Lưu vào `localStorage` (`cfg_idle_warn`, `cfg_idle_auto`, `cfg_expire_days`)
-- Validation: cảnh báo idle phải nhỏ hơn ngày thu hồi
-- Áp dụng ngay lập tức sau khi lưu (không cần reload)
-
-#### Cập nhật `_reasonMap`
-Thêm 2 lý do mới hiển thị trong tab **Lịch Sử Tủ**:
-- `admin_delete_card` → 🗑️ Admin xóa thẻ thủ công
-- `auto_expired_pending` → ⏳ Hết hạn chờ duyệt (tự động)
-
-#### Refactor logic idle (không còn hardcode)
-- `idleTag()` — dùng `_cfg.idleWarn` / `_cfg.idleAuto` thay vì `5` / `7`
-- `openLockerModal()` — dùng `_cfg.idleAuto` / `_cfg.idleWarn` thay vì `7` / `5`
-- Firebase import bổ sung: `remove`, `push`
-
-### Những gì đã bỏ
-- Nút "🗑️ Xóa thẻ" trong modal chi tiết sinh viên (tránh dư thừa — giữ nút ngoài bảng)
-- Thanh cấu hình `auto-expire-bar` inline trên tab Sinh Viên
----
-
-## 🔄 Changelog Web — 28/05/2026 (phiên 2)
-
-### `user-dashboard.html` — Nâng cấp trang tra cứu sinh viên
-
-#### Tính năng mới
-- **Thanh cảnh báo idle** hiển thị ngay dưới thông tin tủ với 3 mức:
-  - 🟢 Xanh: bình thường — "còn N ngày trước ngưỡng cảnh báo"
-  - 🟡 Vàng: sắp đến hạn — "tủ bị thu hồi sau N ngày nữa"
-  - 🔴 Đỏ: quá hạn — "có thể bị thu hồi bất kỳ lúc nào"
-  - Progress bar trực quan theo % idle / ngưỡng tự động
-  - Ngưỡng đọc từ `localStorage` (`cfg_idle_warn`, `cfg_idle_auto`) — khớp với cài đặt admin
-- **Chip "Chờ duyệt" hiện số ngày đã chờ** — "Chờ admin duyệt · N ngày"
-- **Nút "Yêu cầu trả tủ"** — chỉ hiện khi đang có tủ:
-  - Ghi vào Firebase `/release_requests/{mssv}` với `status: pending`
-  - Nếu đã gửi → nút disable, hiện "Đã gửi — chờ admin xử lý"
-  - Có modal xác nhận mật khẩu trước khi gửi (mật khẩu là password tài khoản sinh viên, hash SHA-256 so sánh với `user.password` trong Firebase)
-
-#### Bug fix
-- Fix crash khi tra cứu MSSV có tủ: `onValue(ref(db,'lockers'))` không có try/catch → throw exception do Firebase rules → cả hàm `lookup()` crash im lặng
-- Fix `_currentMssv` / `_currentLockerId` / `_currentUserPassword` khai báo sau khi auto-fill gọi `lookup()` → `ReferenceError` (hoisting issue trong ES module)
-- Fix auto-fill từ `localStorage` gọi `lookup()` trước khi hàm được định nghĩa → chuyển khối auto-fill xuống sau `window.lookup=lookup`
-- Fix `is_approved` check: hỗ trợ cả `1`, `'1'`, `true`, `'true'`
-- Bỏ step 3 "Chưa có tủ — liên hệ admin" khỏi phần hướng dẫn (chỉ hiện khi đã có tủ)
-
-### `index.html` — Admin Dashboard
-
-#### Tính năng mới
-- **Tab "Trả Tủ"** (sidebar icon `logout`):
-  - Badge đỏ hiện số yêu cầu đang chờ xử lý
-  - Bảng danh sách: MSSV, tủ, thời gian gửi, trạng thái (⏳ / ✅)
-  - Hàng đang chờ được tô vàng nhạt
-  - Nút **"Xác nhận trả"** → giải phóng tủ + ghi `locker_delete_logs` (reason: `student_release`) + đánh dấu request `status: done`
-- Firebase listeners (`onValue users/lockers/logs/locker_delete_logs/release_requests`) được bọc trong `startDataListeners()` — chỉ gọi sau khi `onAuthStateChanged` xác nhận đã đăng nhập, tránh race condition với Firebase rules `auth != null`
-
-#### Bug fix
-- Fix admin không đọc được dữ liệu sau khi thêm Firebase rules: `onValue` chạy trước khi auth token sẵn sàng
-- Fix `_reasonMap` / `_allDeleteLogs` bị kẹt trong scope `startDataListeners()` → `ReferenceError` trong `_renderDeleteLogs`
+| Face Detection | Google MediaPipe BlazeFace | 5–15ms/frame trên CPU, góc rộng |
+| Face Embedding | dlib ResNet 128-D | Tương thích DB hiện có |
+| IR Liveness | Rule-based (mean/std) | Không cần train, không cần GPU |
+| Database | SQLite | Nhẹ, hoạt động offline |
+| Cloud Sync | Firebase Realtime DB + Admin SDK | Realtime push, không cần pyrebase |
+| GUI Kiosk | tkinter + PIL | Có sẵn, nhẹ, thread-safe với after() |
+| Camera | winsdk (Windows Media Capture) | Truy cập IR stream Intel RealSense |
+| OTP Email | Gmail SMTP (primary) + EmailJS (fallback) | Không cần backend server |
+| Hardware | Waveshare 7" 1024×600 cảm ứng | Màn hình kiosk nhúng |
 
 ---
 
-## 🔄 Changelog — 29/05/2026
+## 🐛 Known Issues & Limitations
 
-### `kiosk_gui.py` — Pending expire + gửi mail
-
-#### Tính năng mới
-- **`_pending_expire_loop()`** — daemon thread mới, chạy mỗi 6 giờ, độc lập hoàn toàn (không cần ai mở web admin)
-- **Gửi mail warning** khi tài khoản pending còn ≤ `PENDING_WARN_DAYS` ngày (mặc định 2) trước khi expire
-- **Gửi mail thông báo đã xóa** khi tài khoản bị xóa tự động sau `PENDING_EXPIRE_DAYS` ngày (mặc định 7)
-- **Gmail SMTP** (`smtplib.SMTP_SSL`) — không cần backend, không cần Blaze plan
-- **File flag** (`.warn_flags/`) — tránh gửi mail warning lặp nhiều lần trong cùng ngày
-- **Ghi `locker_delete_logs`** trước khi xóa Firebase (reason: `auto_expired_pending`)
-
-#### Cấu hình (đọc từ `.env`)
-| Biến | Mô tả |
+| Hạn chế | Chi tiết |
 |---|---|
-| `MAIL_SENDER` | Gmail dùng để gửi mail |
-| `MAIL_PASSWORD` | Gmail App Password (16 ký tự) |
-| `MAIL_SENDER_NAME` | Tên hiển thị trong email |
+| Windows only | `winsdk` chỉ hỗ trợ Windows — không chạy được trên Linux/macOS |
+| 9 tủ cố định | `L01–L09` hardcode trong DB seed; mở rộng cần sửa migration |
+| 1 kiosk | Kiến trúc hiện tại giả định 1 kiosk duy nhất |
+| Offline EmailJS | OTP mode offline sinh code phía client — kém bảo mật hơn online mode |
 
-- Dùng `python-dotenv` — credential không lưu trong code
-- Tạo App Password tại: https://myaccount.google.com/apppasswords
-- Nếu chưa cấu hình `.env` → tính năng mail tắt im lặng, expire vẫn chạy bình thường
-
-#### Threading sau khi cập nhật
-```python
-threading.Thread(target=_heartbeat_loop,       daemon=True).start()  # ghi kiosk_status/last_seen mỗi 30s
-threading.Thread(target=_cleanup_loop,        daemon=True).start()  # auto thu hồi tủ idle 7 ngày
-threading.Thread(target=_pending_expire_loop, daemon=True).start()  # auto xóa pending expire
-app.after(5_000, _drain_warn_queue, app)
-```
 
 ---
 
-### `user-dashboard.html` — Hủy yêu cầu trả tủ
+## 📅 Changelog tóm tắt
 
-#### Tính năng mới
-- Nút **"Yêu cầu trả tủ"** nay có 2 trạng thái:
-  - 🔴 Chưa gửi → click → nhập mật khẩu → gửi request
-  - 🟡 Đã gửi → hiện "Đã gửi yêu cầu · **Hủy yêu cầu**" → click → confirm → xóa request
-- **`cancelRelease()`** — xóa node `release_requests/{mssv}` khỏi Firebase + reset nút
-- Trạng thái restore đúng khi load lại trang (check Firebase `release_requests/{mssv}`)
-- Thêm `remove` vào Firebase import
-
----
-
-### `core/db.py` — Thêm cột `last_open` vào `Lockers`
-
-- `migrate()` tự thêm `ALTER TABLE Lockers ADD COLUMN last_open TEXT` khi khởi động
-- Cũng kiểm tra `assigned_date` phòng DB cũ thiếu cột
-- Idempotent — chạy nhiều lần không lỗi
-
----
-
-### `core/locker_db.py` — Ghi `last_open` khi mở tủ
-
-- `open_locker()` — cả 2 nhánh (tủ sẵn + gán tủ mới) đều:
-  - `UPDATE Lockers SET last_open=? WHERE locker_id=?` (SQLite)
-  - `fdb.reference(f'lockers/{lid}').update({'last_open': now})` (Firebase)
-- Thống nhất tên field: `last_open` (bỏ `last_open_time` cũ)
-
----
-
-### `sync_tool.py` — Sync `last_open` theo `Lockers`
-
-- `get_sqlite_lockers()` — thêm `last_open` vào SELECT
-- `push()` — include `last_open` khi push lockers lên Firebase
-- **`pull_locker_last_open()`** — hàm mới, kéo `last_open` từ Firebase `/lockers` xuống SQLite khi boot, rule merge: **lấy giá trị mới hơn** (ISO string sort tự nhiên)
-- Gọi tự động trong `main()` khi `--pull` hoặc `--sync`
-
----
-
-### `sync_listener.py` — Realtime sync `last_open`
-
-- `on_locker_change()` — ngoài xử lý `status='empty'`, nay còn sync `last_open`:
-  - Đọc `last_open` từ Firebase event
-  - So sánh với SQLite — chỉ ghi xuống nếu Firebase mới hơn (tránh ghi đè khi kiosk vừa push)
-
----
-
-### Quy tắc ưu tiên `last_open` (bổ sung vào sync rules)
-| Trường | Quy tắc |
+| Ngày | Nội dung |
 |---|---|
-| `Lockers.last_open` | Lấy giá trị **mới hơn** giữa SQLite và Firebase (ISO string compare) |
+| 19–27/05 | Khởi tạo dự án, refactor module hóa, face enroll/verify pipeline |
+| 27/05 | Thêm Trả tủ (S_LOCKER_MENU), auto-cleanup 7 ngày, LOCKER_DELETE_LOG |
+| 28/05 | Web: xóa thẻ thủ công, auto-expire pending, modal Cài Đặt tập trung |
+| 29/05 | Pending expire daemon, gửi mail warning, sync `last_open` 2 chiều |
+| 03/06 | 2FA OTP email khi đăng nhập kiosk, fix JS Date Trap, fix Firebase rules |
+| 04/06 | Fix đồng bộ `assigned_date`/`last_open`, heartbeat kiosk, bàn phím ảo 1024×600 |
+| 05/06 | Kiosk status realtime trên admin, OTP trả tủ server-side verify (SHA-256 hash) |
 
-Tóm lại những gì đã thay đổi trong file sync_tool.py:
-Thêm hàm get_delete_logs() — đọc locker_delete_logs từ Firebase, tách ra 2 set:
-
-admin_deleted_mssv → lọc reason == 'admin_delete_card'
-released_lockers → lọc reason == 'student_release', map theo {mssv: {locker_id}}
-
-Sửa push() — phần users: nếu user có trong SQLite nhưng không có Firebase → kiểm tra admin_deleted_mssv trước, nếu có thì xóa SQLite và bỏ qua, không push ngược lên.
-Sửa push() — phần lockers: nếu tủ đang occupied trong SQLite → kiểm tra released_lockers, nếu tủ đó đã được trả (đúng cặp mssv + locker_id) thì dọn SQLite và push empty lên Firebase thay vì push lại occupied.Sửa push() — phần lockers: nếu tủ đang occupied trong SQLite → kiểm tra released_lockers, nếu tủ đó đã được trả (đúng cặp mssv + locker_id) thì dọn SQLite và push empty lên Firebase thay vì push lại occupied.
-
----
-
-## 🔄 Changelog — 03/06/2026 (Bảo mật & Fix hiển thị)
-
-### Mục tiêu
-1. Bổ sung gửi email tự động (duyệt thẻ & OTP đăng nhập Kiosk)
-2. Tăng cường bảo mật Kiosk với 2FA (xác thực 2 bước qua OTP email)
-3. Khắc phục triệt để lỗi "JS Date Trap" gây sai ngày tháng trên Web
-4. Tối ưu luồng điều hướng Kiosk (Bỏ qua khuôn mặt → Vào tủ)
+> Chi tiết từng thay đổi xem tại [`CHANGELOG.md`](./CHANGELOG.md)
 
 ---
 
-### `gui/kiosk_app.py`
-
-#### Bảo mật 2 lớp (2FA)
-- Tích hợp luồng gửi mã OTP 6 số qua email khi sinh viên đăng nhập bằng mật khẩu
-- Gộp khung nhập MSSV, Mật khẩu và OTP trên cùng một giao diện (Inline Numpad/Entry)
-- Có nút **"Gửi mã"** riêng biệt, thay thế popup cồng kềnh trước đây
-
-#### Fix luồng điều hướng (Skip Face)
-- Sửa lỗi khi sinh viên nhấn "Bỏ qua" ở bước hỏi đăng ký khuôn mặt
-- Trước: hệ thống văng ra `S_IDLE`
-- Sau: chuyển hướng đúng vào `_show_locker_menu` (đã có tủ) hoặc `_show_locker_picker` (chưa có tủ)
-
----
-
-### `sync_listener.py` — Tự động gửi mail khi duyệt thẻ
-
-- Lắng nghe sự kiện Firebase: nếu `is_approved` chuyển từ `0` → `1`
-- Đọc `.env` (MAIL_SENDER, MAIL_PASSWORD) và gửi email thông báo tài khoản đã được duyệt cho sinh viên
-- Không ảnh hưởng luồng sync nếu mail chưa cấu hình (tắt im lặng)
-
----
-
-### `core/user_db.py` — Bổ sung truy vấn Email
-
-- Cập nhật `SELECT` trong `get_user()` và `get_user_by_password()` để lấy thêm trường `email`
-- Phục vụ gửi OTP tại Kiosk
-- Fix bug `sync_users_to_firebase`: sửa lỗi gọi nhầm trường `last_open` (thuộc bảng `Lockers`) trong câu query của bảng `Users`
-
----
-
-### `index.html` & `user-dashboard.html` — Fix lỗi "JS Date Trap"
-
-#### Vấn đề
-`new Date("3/6/2026")` bị JS hiểu là **03 tháng 6** (chuẩn Mỹ MM/dd/yyyy), trong khi thực tế hệ thống lưu theo chuẩn Việt Nam **dd/MM/yyyy** (ngày 3 tháng 6). Gây ra:
-- Tính sai số ngày idle (VD: báo 89 ngày thay vì 0 ngày)
-- `autoExpirePendingCards()` tự động xóa thẻ chờ duyệt ngay lập tức
-
-#### Fix
-- Viết lại `calcIdleDays()` dùng Regex bóc tách `dd/MM/yyyy` thủ công, không dùng `new Date(string)` trực tiếp
-- Viết lại `autoExpirePendingCards()` theo logic tương tự
-- Loại bỏ hoàn toàn sự phụ thuộc vào hành vi parse ngày của JS
-
----
-
-### `register.html` & Firebase Security Rules — Fix Permission Denied
-
-#### Vấn đề
-Sinh viên vãng lai không thể tự đăng ký tài khoản — Firebase trả về `Permission Denied` vì rule cũ yêu cầu `auth != null` để ghi vào `/users/$mssv`.
-
-#### Fix
-Cập nhật rule `/users/$mssv`:
-```json
-".write": "auth != null || !data.exists()"
-```
-- `!data.exists()` → cho phép tạo node mới (đăng ký lần đầu) mà không cần auth
-- `auth != null` → vẫn yêu cầu đăng nhập nếu node đã tồn tại (không thể ghi đè tài khoản người khác)
-
----
-
-### Bug fix tổng hợp
-
-| Lỗi | Nguyên nhân | Fix |
-|---|---|---|
-| `calcDays is not defined` trong `user-dashboard.html` | Hàm đặt tên `calcIdleDays` nhưng gọi `calcDays` | Đổi tất cả thành `calcIdleDays` |
-| `myLocker.last_open_time` undefined | Field đã đổi tên thành `last_open` từ 29/05 | Đổi thành `myLocker.last_open` |
-| Báo idle sai (VD: 89 ngày) | `new Date("3/6/2026")` hiểu sai sang tháng 3 | Dùng Regex parse `dd/MM/yyyy` thủ công |
-| Tự xóa thẻ pending ngay lập tức | `autoExpirePendingCards` cùng lỗi Date Trap | Viết lại hàm dùng Regex |
-| Sinh viên không thể đăng ký (`Permission Denied`) | Firebase rule yêu cầu `auth != null` cho mọi write | Rule mới: `auth != null \|\| !data.exists()` |
-| `sync_users_to_firebase` lỗi column | Query Users JOIN nhầm sang cột `last_open` của Lockers | Sửa câu SELECT đúng bảng |
-| Kiosk "Bỏ qua" khuôn mặt → về trang chủ | Logic skip chưa check trạng thái tủ | Thêm rẽ nhánh `_show_locker_menu` / `_show_locker_picker` |
-
----
-
-## 🔄 Changelog — 04/06/2026 (Fix đồng bộ tủ)
-
-### Mục tiêu
-1. Sửa triệt để lỗi mất `assigned_date` và `last_open` khi đồng bộ Firebase ↔ SQLite
-2. Thống nhất field name `last_open` (bỏ `last_open_time` cũ)
-3. Đảm bảo trả tủ từ web xóa đúng tất cả các field liên quan
-
----
-
-### `sync_tool.py` — Fix mất dữ liệu khi đồng bộ
-
-#### Bug fix
-- **`get_sqlite_lockers()`** — thêm `assigned_date` vào câu SELECT (trước bị bỏ sót)
-- **`push()` — lockers** — đổi `.set()` → `.update()` để không xóa field không có trong payload; thêm `assigned_date` vào payload; merge `last_open` lấy giá trị mới hơn thay vì ghi đè bằng `''`
-- **Nhánh FIX LOCKER** — thêm `assigned_date: ''` vào payload khi reset tủ đã trả
-
----
-
-### `sync_listener.py` — Fix trả tủ từ web
-
-#### Bug fix — `on_locker_change()`
-- Đảo thứ tự xử lý: check `status='empty'` **trước**, sync `last_open` **sau**
-- Thêm `assigned_date=NULL, last_open=NULL` vào câu UPDATE khi reset tủ
-- `return` sớm sau khi reset — tránh sync `last_open` cũ còn trên Firebase vào tủ vừa trả
-
----
-
-### `kiosk_gui.py` — Thêm Heartbeat
-
-#### Tính năng mới
-- **`_heartbeat_loop()`** — daemon thread mới, ghi `/kiosk_status/last_seen` lên Firebase mỗi **30 giây**
-
-```python
-threading.Thread(target=_heartbeat_loop, daemon=True).start()
-```
-
----
-
-### `index.html` — Fix trả tủ xóa đủ field
-
-#### Bug fix
-| Hàm | Fix |
-|---|---|
-| `confirmAssignLocker()` | Đổi `last_open_time` → `last_open`, đổi `toLocaleString` → ISO format |
-| `releaseUserLocker()` | Thêm `last_open:'', last_open_time:''` + ghi log `admin_force` vào `locker_delete_logs` |
-| `handleRelease()` | Thêm `last_open:'', last_open_time:''` |
-| `deleteCard()` | Thêm `last_open:'', last_open_time:''` |
-| `autoExpirePendingCards()` | Thêm `last_open:'', last_open_time:''` |
-| Render grid | Đọc `last_open \|\| last_open_time` — tương thích ngược dữ liệu cũ |
-
----
-
-### `core/locker_db.py` — Fix `release_locker()`
-
-- Thêm `last_open=NULL` vào câu UPDATE (trước chỉ có `assigned_date=NULL`)
-
----
-
----
-
-## 🔄 Changelog — 04/06/2026 (Giao diện Kiosk — Màn hình cảm ứng 1024×600)
-
-### Mục tiêu
-1. Điều chỉnh giao diện kiosk vừa màn hình Waveshare 7" 1024×600px
-2. Thêm bàn phím ảo QWERTY cho màn hình cảm ứng (không có bàn phím vật lý)
-3. Kiểm soát chính xác thời điểm hiện/ẩn bàn phím
-
----
-
-### `gui/theme.py` — Điều chỉnh kích thước màn hình
-
-| Tham số | Cũ | Mới | Lý do |
-|---|---|---|---|
-| `SCREEN_W` | 1280 | 1024 | Waveshare 7" 1024×600 |
-| `SCREEN_H` | 720 | 600 | Waveshare 7" 1024×600 |
-| `CAM_W` | 680 | 560 | ~55% chiều rộng màn hình |
-| `CAM_H` | 510 | 430 | `600 - header(60) - footer(36) - y(65) - margin` |
-| Font `title` | size 26 | size 22 | Vừa với màn hình nhỏ hơn |
-| Font `head` | size 16 | size 14 | |
-| Font `body` | size 13 | size 12 | |
-| Font `small` | size 10 | size 9 | |
-
----
-
-### `gui/kiosk_app.py` — Fix layout + Thêm bàn phím ảo
-
-#### Fix layout header
-- Header height: `70px → 60px`
-- `lbl_time.place(y=24 → y=18)` — căn giữa trong header mới
-- Camera / placeholder `y=85 → y=65` — sát header hơn
-
-#### Thêm class `VirtualKeyboard`
-Bàn phím ảo QWERTY nhúng trong cửa sổ chính dưới dạng `tk.Frame` (không dùng `Toplevel` tránh vấn đề focus trên Raspberry Pi / Windows):
-
-**Tính năng:**
-- Layout QWERTY đầy đủ + hàng số + ký tự đặc biệt (`@`, `.`, `_`, `-`)
-- Chế độ thường / HOA (nút ⇧ toggle, tự tắt sau khi gõ một chữ hoa)
-- Nút ⌫ xóa từng ký tự, CLR xóa hết, OK đóng bàn phím
-- **Title bar kéo được** — giữ và kéo để di chuyển bàn phím ra chỗ thuận tiện; vị trí được ghi nhớ trong phiên
-- Nút **✕** trên title bar để đóng
-- `takefocus=False` trên tất cả nút → entry không bị mất focus khi nhấn phím
-- Mặc định ẩn hoàn toàn, **không** tự hiện khi app khởi động
-
-**Kiểm soát hiển thị:**
-- Chỉ mở khi người dùng **click/chạm trực tiếp vào ô nhập** (`Button-1`)
-- Không dùng `FocusIn` (tránh trigger tự động khi app khởi động)
-- Cờ `_enabled = False` → bật sau `300ms` (`self.after(300, self._vkb.enable)`) đảm bảo app render xong trước khi lắng nghe sự kiện
-- Tự ẩn khi chuyển màn hình (`_go()` gọi `self._vkb.hide()`)
-
-**Gắn vào Entry:**
-- `self._vkb.attach(entry)` — gắn vào entry MSSV (face login), MSSV/mật khẩu/OTP (login pass), và tất cả field đăng ký
-
-#### Thêm hàm `attach_keyboard()` (stub)
-Giữ lại để tương thích ngược, thực tế dùng `self._vkb.attach()`.
-
----
-
-### Quy ước field `last_open` (chuẩn hóa)
-
-| Nguồn | Format |
-|---|---|
-| Python (kiosk/sync) | `"2026-06-04 11:02:34"` — `strftime("%Y-%m-%d %H:%M:%S")` |
-| JavaScript (web) | `new Date().toISOString().slice(0,19).replace('T',' ')` |
-| Field name | `last_open` — bỏ hoàn toàn `last_open_time` |
-
-1 — Cập nhật dòng ngày cấu trúc file:
-## 🗂 Cấu trúc file hiện tại (FINAL — cập nhật 05/06/2026)
-Thêm emailjs_config.js vào cây thư mục:
-├── emailjs_config.js             ← EmailJS credentials (KHÔNG commit git)
-2 — Cập nhật Firebase Structure section, thêm 4 node mới:
-/kiosk_status/last_seen
-/kiosk_status/connected
-/otp_requests/{mssv}
-/otp_tokens/{mssv}
-3 — Cập nhật sync_listener.py trong bảng Firebase Sync:
-- /otp_requests/{mssv} → sinh OTP + gửi mail + ghi otp_tokens
-4 — Cập nhật .gitignore (nếu có trong README):
-emailjs_config.js
-.warn_flags/
-
-## 🔄 Changelog — 05/06/2026 (Kiosk Status & Thông Báo Trả Tủ)
-
-### Mục tiêu
-1. Hiển thị trạng thái Kiosk online/offline realtime trên trang admin
-2. Thông báo rõ ràng khi có yêu cầu trả tủ mới
-
----
-
-### `index.html` — Kiosk Status
-
-#### Stat card "Kiosk" (Home tab)
-- Card thứ 5 trong stats-grid
-- Dot xanh/đỏ + text "Online" / "Offline"
-- Dòng nhỏ "last seen: Xs trước" — cập nhật realtime
-- Viền card đổi màu xanh/đỏ tương ứng
-
-#### Badge trên header
-- Hiện "Kiosk Online" / "Kiosk Offline" ngay cạnh tiêu đề
-- Luôn thấy dù đang ở tab nào
-
-#### Logic phát hiện online
-- Dùng `onValue` lắng nghe `/kiosk_status` realtime — không poll
-- Online nếu `connected=true` **hoặc** `last_seen < 90 giây`
-
----
-
-### `index.html` — Thông Báo Yêu Cầu Trả Tủ
-
-#### Stat card "Yêu cầu trả tủ" (Home tab)
-- Hiện số pending realtime, màu vàng
-- Khi có pending: viền vàng + animation pulse nhấp nháy
-- Click vào card → tự chuyển sang tab Trả Tủ
-
-#### Toast notification
-- Hiện `"🔔 Có N yêu cầu trả tủ mới"` mỗi khi count tăng
-- Không fire khi load trang lần đầu
-
-#### Browser Notification
-- Hiện notification hệ thống kể cả khi tab đang minimize
-- Yêu cầu đã cấp quyền Notification trước đó
-
-#### Fix đồng thời
-- Hiển thị `requested_at_display` (chuỗi tiếng Việt) thay vì ISO string trong bảng
+*Smart Locker — HCMUTE Makerspace · Python 3.11 · Firebase Realtime DB*

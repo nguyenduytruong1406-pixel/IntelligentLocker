@@ -6,6 +6,7 @@ import smtplib
 import os
 import random
 import string
+import hashlib                          # ← MỚI: để hash OTP
 from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -30,6 +31,10 @@ def get_conn():
 
 def _generate_otp(length: int = 6) -> str:
     return ''.join(random.choices(string.digits, k=length))
+
+def _hash_otp(code: str) -> str:
+    """SHA-256 hash của OTP — cái này lưu Firebase, KHÔNG lưu code gốc."""
+    return hashlib.sha256(code.encode()).hexdigest()
 
 
 def send_otp_email(student_email: str, student_name: str, mssv: str, otp_code: str) -> bool:
@@ -83,7 +88,7 @@ def send_otp_email(student_email: str, student_name: str, mssv: str, otp_code: s
 
 
 def on_otp_request(event):
-    """Lắng nghe /otp_requests/{mssv} — sinh OTP và ghi vào /otp_tokens/{mssv}."""
+    """Lắng nghe /otp_requests/{mssv} — sinh OTP, lưu HASH vào /otp_tokens/{mssv}, gửi code gốc qua mail."""
     if event.path == '/':
         return
     mssv = event.path.strip('/').split('/')[0]
@@ -94,7 +99,6 @@ def on_otp_request(event):
     email = request_data.get('email', '')
     name  = request_data.get('name', mssv)
     if not email:
-        # Thử lấy email từ users node
         user_data = db.reference(f'users/{mssv}').get() or {}
         email = user_data.get('email', '')
         name  = user_data.get('name', mssv)
@@ -104,25 +108,113 @@ def on_otp_request(event):
         return
 
     code       = _generate_otp()
+    hashed     = _hash_otp(code)                          # ← hash để lưu Firebase
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Ghi token lên Firebase trước, rồi gửi mail
+    # Lưu HASH (không lưu code gốc) + số lần thử còn lại
     try:
         db.reference(f'otp_tokens/{mssv}').set({
-            "code"      : code,
-            "expires_at": expires_at,
+            "hashed_code": hashed,      # ← client KHÔNG thể reverse về code gốc
+            "expires_at" : expires_at,
+            "attempts"   : 0,           # ← đếm số lần thử sai
         })
     except Exception as e:
         print(f"[OTP] ✗ Lỗi ghi otp_tokens/{mssv}: {e}")
         return
 
-    send_otp_email(email, name, mssv, code)
+    send_otp_email(email, name, mssv, code)  # gửi code GỐC qua mail
 
-    # Xóa request sau khi xử lý để tránh fire lại
     try:
         db.reference(f'otp_requests/{mssv}').delete()
     except Exception:
         pass
+
+
+def on_verify_attempt(event):
+    """
+    Lắng nghe /verify_attempts/{mssv} — client gửi code nhập vào đây.
+    Server so sánh hash và ghi kết quả vào /verify_results/{mssv}.
+    Client KHÔNG bao giờ đọc otp_tokens.
+    """
+    if event.path == '/':
+        return
+    mssv = event.path.strip('/').split('/')[0]
+
+    attempt_data = db.reference(f'verify_attempts/{mssv}').get()
+    if not attempt_data:
+        return
+
+    entered_code = str(attempt_data.get('code', '')).strip()
+
+    # Lấy token từ Firebase
+    token = db.reference(f'otp_tokens/{mssv}').get()
+
+    def _write_result(ok: bool, reason: str):
+        db.reference(f'verify_results/{mssv}').set({
+            "ok"       : ok,
+            "reason"   : reason,
+            "ts"       : datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+        # Xóa attempt sau khi xử lý
+        try:
+            db.reference(f'verify_attempts/{mssv}').delete()
+        except Exception:
+            pass
+        # Xóa verify_results sau 15 giây (đủ để client đọc xong)
+        import threading
+        def _cleanup():
+            time.sleep(15)
+            try:
+                db.reference(f'verify_results/{mssv}').delete()
+            except Exception:
+                pass
+        threading.Thread(target=_cleanup, daemon=True).start()
+
+    if not token:
+        _write_result(False, "no_token")
+        print(f"[OTP-Verify] ⚠ {mssv}: không tìm thấy token")
+        return
+
+    # Kiểm tra hết hạn
+    try:
+        expires_dt = datetime.strptime(token['expires_at'], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires_dt:
+            db.reference(f'otp_tokens/{mssv}').delete()
+            _write_result(False, "expired")
+            print(f"[OTP-Verify] ⏰ {mssv}: token hết hạn")
+            return
+    except Exception:
+        _write_result(False, "invalid_token")
+        return
+
+    # Rate limit: tối đa 5 lần thử
+    attempts = int(token.get('attempts', 0))
+    MAX_ATTEMPTS = 5
+    if attempts >= MAX_ATTEMPTS:
+        db.reference(f'otp_tokens/{mssv}').delete()
+        _write_result(False, "too_many_attempts")
+        print(f"[OTP-Verify] 🚫 {mssv}: vượt quá {MAX_ATTEMPTS} lần thử — hủy token")
+        return
+
+    # So sánh hash
+    hashed_entered = _hash_otp(entered_code)
+    if hashed_entered == token.get('hashed_code', ''):
+        # Đúng → xóa token (dùng 1 lần)
+        try:
+            db.reference(f'otp_tokens/{mssv}').delete()
+        except Exception:
+            pass
+        _write_result(True, "ok")
+        print(f"[OTP-Verify] ✅ {mssv}: OTP hợp lệ")
+    else:
+        # Sai → tăng attempts
+        try:
+            db.reference(f'otp_tokens/{mssv}').update({"attempts": attempts + 1})
+        except Exception:
+            pass
+        remaining = MAX_ATTEMPTS - attempts - 1
+        _write_result(False, f"wrong_code:{remaining}_left")
+        print(f"[OTP-Verify] ❌ {mssv}: OTP sai — còn {remaining} lần thử")
 
 
 # ── HÀM GỬI EMAIL THÔNG BÁO DUYỆT ───────────────────────────────────────────
@@ -176,6 +268,7 @@ def send_approval_email(student_email: str, student_name: str, mssv: str) -> boo
         print(f"[SyncListener] ✗ Lỗi gửi mail duyệt cho {mssv}: {e}")
         return False
 
+
 # ── 1. LẮNG NGHE THAY ĐỔI USER ───────────────────────────────────────────────
 def on_user_change(event):
     if event.path == '/': return
@@ -183,7 +276,6 @@ def on_user_change(event):
 
     user_data = db.reference(f'users/{mssv}').get()
     
-    # Xử lý: Admin xóa User trên Web
     if user_data is None:
         with get_conn() as conn:
             conn.execute("UPDATE Lockers SET status='empty', current_mssv=NULL WHERE current_mssv=?", (mssv,))
@@ -194,24 +286,21 @@ def on_user_change(event):
     name        = user_data.get('name', 'Unknown')
     is_approved = int(user_data.get('is_approved', 0))
     email       = user_data.get('email', '')
-    password_fb = user_data.get('password')  # <-- Lấy password từ Web
+    password_fb = user_data.get('password')
     has_face_fb = 1 if user_data.get('has_face') else 0
 
-    old_is_approved = 0  # Biến lưu trạng thái duyệt cũ để kiểm tra gửi mail
+    old_is_approved = 0
 
     with get_conn() as conn:
         cur = conn.cursor()
-        # BỔ SUNG: Lấy thêm trường is_approved hiện tại ở Local
         cur.execute("SELECT has_face, password, is_approved FROM Users WHERE mssv=?", (mssv,))
         row = cur.fetchone()
 
         if row:
-            merged_has_face = max(row[0] or 0, has_face_fb)
+            merged_has_face  = max(row[0] or 0, has_face_fb)
             current_password = row[1]
-            old_is_approved = row[2] or 0
-            
-            # Ưu tiên password từ web nếu có, nếu không thì giữ password cũ ở máy Kiosk
-            final_password = password_fb if password_fb else current_password
+            old_is_approved  = row[2] or 0
+            final_password   = password_fb if password_fb else current_password
 
             cur.execute(
                 "UPDATE Users SET name=?, is_approved=?, has_face=?, email=?, password=? WHERE mssv=?",
@@ -228,12 +317,11 @@ def on_user_change(event):
     status_text = "Đã duyệt" if is_approved == 1 else "Chờ duyệt"
     print(f"[Sync] 👤 {act} User: {name} ({mssv}) | {status_text}")
 
-    # --- KIỂM TRA & GỬI MAIL DUYỆT THÀNH CÔNG ---
-    # Chỉ gửi khi: Trạng thái mới là 1 (Đã duyệt) VÀ Trạng thái cũ là 0 (Chưa duyệt) VÀ user có email
     if is_approved == 1 and old_is_approved == 0 and email:
         send_approval_email(email, name, mssv)
 
-# ── 2. LẮNG NGHE THAY ĐỔI TỦ (TRẢ TỦ TỪ WEB) ──────────────────────────────────
+
+# ── 2. LẮNG NGHE THAY ĐỔI TỦ (TRẢ TỦ TỪ WEB) ───────────────────────────────
 def on_locker_change(event):
     if event.path == '/': return
     lid = event.path.strip('/').split('/')[0]
@@ -245,7 +333,6 @@ def on_locker_change(event):
     last_open = locker_data.get('last_open') or ''
 
     with get_conn() as conn:
-        # Trả tủ từ web — xử lý TRƯỚC, xóa luôn assigned_date & last_open
         if status == 'empty':
             conn.execute(
                 """UPDATE Lockers
@@ -255,15 +342,13 @@ def on_locker_change(event):
                 (lid,)
             )
             print(f"[Sync] 🔓 Trả tủ {lid} (Lệnh từ Web)")
-            return  # Không sync last_open của tủ vừa được trả
+            return
 
-        # Sync last_open — chỉ chạy khi tủ đang occupied
         if last_open:
             row = conn.execute(
                 "SELECT last_open FROM Lockers WHERE locker_id=?", (lid,)
             ).fetchone()
             sq_last_open = (row[0] or '') if row else ''
-            # Chỉ update nếu Firebase mới hơn (tránh ghi đè khi kiosk vừa ghi)
             if last_open > sq_last_open:
                 conn.execute(
                     "UPDATE Lockers SET last_open=? WHERE locker_id=?",
@@ -271,13 +356,15 @@ def on_locker_change(event):
                 )
                 print(f"[Sync] 🕐 last_open tủ {lid} → {last_open}")
 
+
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def start():
     print("[System] 📡 Đang bật kết nối Websocket Realtime...")
     db.reference('users').listen(on_user_change)
     db.reference('lockers').listen(on_locker_change)
     db.reference('otp_requests').listen(on_otp_request)
-    print("[System] 📡 Đã bật listener: users / lockers / otp_requests")
+    db.reference('verify_attempts').listen(on_verify_attempt)   # ← MỚI
+    print("[System] 📡 Đã bật listener: users / lockers / otp_requests / verify_attempts")
 
 if __name__ == "__main__":
     start()

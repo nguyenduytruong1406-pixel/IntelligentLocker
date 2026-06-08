@@ -329,7 +329,8 @@ let _otpExpires     = 0;
 let _otpCode        = "";      // chỉ dùng trong offline mode
 let _otpMode        = "online";
 let _otpCountdownId = null;
-let _otpUnsub       = null;
+let _otpUnsub       = null;    // không dùng nữa trong online mode, giữ để tránh lỗi ref
+let _verifyUnsub    = null;    // lắng nghe verify_results
 
 const EVENT_LABEL={
   'OPEN_LOCKER'   :'Mở tủ',
@@ -659,6 +660,7 @@ window.closeReleaseModal=function(){
   document.getElementById('release-modal').classList.remove('show');
   if(_otpCountdownId){ clearInterval(_otpCountdownId); _otpCountdownId=null; }
   if(_otpUnsub){ _otpUnsub(); _otpUnsub=null; }
+  if(_verifyUnsub){ _verifyUnsub(); _verifyUnsub=null; }
 };
 
 // Đóng modal khi click ra ngoài
@@ -746,22 +748,18 @@ async function _sendOtp(){
 
   if(online){
     document.getElementById('otp-mode-label').textContent='📡 Kiosk đang trực tuyến — đang gửi OTP qua Kiosk…';
-    // Ghi otp_requests → sync_listener sẽ sinh OTP, gửi mail, ghi otp_tokens
+    // Ghi otp_requests → sync_listener sinh OTP, hash rồi lưu otp_tokens, gửi mail code gốc
     await set(ref(db,`otp_requests/${_currentMssv}`),{email,name,requested:new Date().toISOString()});
 
-    // Lắng nghe otp_tokens/{mssv} để biết khi nào OTP sẵn sàng
-    _otpUnsub=onValue(ref(db,`otp_tokens/${_currentMssv}`),(snap)=>{
-      if(!snap.exists()) return;
-      const t=snap.val();
-      if(new Date(t.expires_at).getTime()<Date.now()) return;
-      _otpExpires=new Date(t.expires_at).getTime();
-      _otpCode=t.code;   // lưu để so sánh lần cuối
-      document.getElementById('otp-mode-label').textContent='✉️ Mã OTP đã gửi tới email của bạn.';
-      document.getElementById('otp-entry-section').style.display='block';
-      document.getElementById('otp-input').focus();
-      startOtpCountdown();
-      if(_otpUnsub){_otpUnsub();_otpUnsub=null;}
-    });
+    // Lắng nghe verify_results/{mssv} để nhận kết quả sau khi submit OTP
+    // (KHÔNG lắng nghe otp_tokens — server giữ hash, client không đọc code)
+    // Chờ kiosk xử lý xong (otp_tokens được ghi) bằng cách poll verify_results
+    // Hiện form nhập sau 2s (đủ thời gian sync_listener ghi token + gửi mail)
+    await new Promise(r=>setTimeout(r,2000));
+    document.getElementById('otp-mode-label').textContent='✉️ Mã OTP đã gửi tới email của bạn.';
+    document.getElementById('otp-entry-section').style.display='block';
+    document.getElementById('otp-input').focus();
+    startOtpCountdown();
 
   } else {
     document.getElementById('otp-mode-label').textContent='📴 Kiosk offline — đang gửi OTP trực tiếp qua email…';
@@ -796,40 +794,97 @@ window.resendOtp=async function(){
   await _sendOtp();
 };
 
-// ── Bước 2: Xác nhận OTP → ghi release_request ───────────────────────────
+// ── Bước 2: Xác nhận OTP → gửi lên verify_attempts, chờ verify_results ──────
 window.confirmReleaseOtp=async function(){
   const entered=document.getElementById('otp-input').value.trim();
   if(!entered){setOtpError('Vui lòng nhập mã OTP.'); return;}
   if(Date.now()>_otpExpires){setOtpError('Mã OTP đã hết hạn. Vui lòng gửi lại.'); return;}
 
-  let valid=false;
+  const confirmBtn=document.querySelector('.btn-confirm-otp');
+  confirmBtn.disabled=true;
+  confirmBtn.textContent='Đang xác thực…';
+  setOtpError('');
+
   if(_otpMode==='online'){
-    // Kiểm tra Firebase (source of truth) để tránh giả mạo client-side
+    // ── Online: gửi code lên verify_attempts, server so hash, trả kết quả qua verify_results
+    // Client KHÔNG đọc otp_tokens — không bao giờ thấy hashed_code
+    // Ghi timestamp lúc gửi attempt để lọc kết quả cũ
+    const attemptTs = new Date().toISOString();
+
     try{
-      const tSnap=await get(ref(db,`otp_tokens/${_currentMssv}`));
-      if(tSnap.exists()){
-        const t=tSnap.val();
-        valid=t.code===entered&&new Date(t.expires_at).getTime()>Date.now();
+      // Gửi attempt — server (sync_listener) sẽ tự dọn verify_results cũ
+      await set(ref(db,`verify_attempts/${_currentMssv}`),{
+        code: entered,
+        ts  : new Date().toISOString()
+      });
+    }catch(e){
+      setOtpError('❌ Lỗi gửi mã: '+e.message);
+      confirmBtn.disabled=false; confirmBtn.textContent='Xác nhận trả tủ';
+      return;
+    }
+
+    // Lắng nghe verify_results/{mssv} với timeout 10s
+    let resolved=false;
+    const resultRef=ref(db,`verify_results/${_currentMssv}`);
+    const timeout=setTimeout(()=>{
+      if(!resolved){
+        resolved=true;
+        if(_verifyUnsub){_verifyUnsub();_verifyUnsub=null;}
+        setOtpError('❌ Hết thời gian chờ phản hồi. Thử lại.');
+        confirmBtn.disabled=false; confirmBtn.textContent='Xác nhận trả tủ';
       }
-    }catch{valid=false;}
+    },10000);
+
+    _verifyUnsub=onValue(resultRef,async(snap)=>{
+      if(!snap.exists()||resolved) return;
+      const result=snap.val();
+      // Bỏ qua kết quả cũ hơn lúc gửi attempt (tránh fire với data cũ)
+      if(!result.ts || result.ts < attemptTs) return;
+      resolved=true;
+      clearTimeout(timeout);
+      if(_verifyUnsub){_verifyUnsub();_verifyUnsub=null;}
+      // verify_results được sync_listener tự dọn — client không xóa
+
+      if(result.ok){
+        await _onOtpVerified();
+      } else {
+        const reason=result.reason||'';
+        if(reason==='expired')            setOtpError('❌ Mã OTP đã hết hạn. Vui lòng gửi lại.');
+        else if(reason==='too_many_attempts') setOtpError('🚫 Quá nhiều lần thử sai. Vui lòng yêu cầu mã mới.');
+        else if(reason==='no_token')      setOtpError('❌ Phiên OTP không tồn tại. Vui lòng gửi lại.');
+        else{
+          // Trích remaining từ reason "wrong_code:N_left"
+          const m=reason.match(/(\d+)_left/);
+          const left=m?` (còn ${m[1]} lần thử)`:'';
+          setOtpError(`❌ Mã OTP không đúng${left}. Vui lòng kiểm tra lại.`);
+        }
+        confirmBtn.disabled=false; confirmBtn.textContent='Xác nhận trả tủ';
+      }
+    });
+
   } else {
-    valid=_otpCode===entered;
+    // ── Offline: so sánh client-side (EmailJS mode — code gốc lưu trong _otpCode)
+    if(_otpCode===entered){
+      _otpCode=''; // xóa ngay sau khi dùng
+      await _onOtpVerified();
+    } else {
+      setOtpError('❌ Mã OTP không đúng. Vui lòng kiểm tra lại.');
+      confirmBtn.disabled=false; confirmBtn.textContent='Xác nhận trả tủ';
+    }
   }
+};
 
-  if(!valid){setOtpError('❌ Mã OTP không đúng. Vui lòng kiểm tra lại.'); return;}
-
-  // Hợp lệ → dọn dẹp + ghi release_request
+// ── Sau khi OTP hợp lệ: dọn dẹp và ghi release_request ──────────────────────
+async function _onOtpVerified(){
   if(_otpCountdownId){clearInterval(_otpCountdownId);_otpCountdownId=null;}
-  try{ await remove(ref(db,`otp_tokens/${_currentMssv}`)); }catch{}
-
   const btn=document.getElementById('btn-release');
   btn.disabled=true;
   try{
     await set(ref(db,`release_requests/${_currentMssv}`),{
-      mssv:_currentMssv,
-      locker_id:_currentLockerId,
-      requested_at:new Date().toLocaleString('vi-VN'),
-      status:'pending'
+      mssv        : _currentMssv,
+      locker_id   : _currentLockerId,
+      requested_at: new Date().toLocaleString('vi-VN'),
+      status      : 'pending'
     });
     closeReleaseModal();
     _showCancelState(btn);
@@ -838,7 +893,7 @@ window.confirmReleaseOtp=async function(){
     btn.disabled=false;
     setOtpError('❌ Lỗi gửi yêu cầu: '+e.message);
   }
-};
+}
 
 // Hủy yêu cầu trả tủ đang pending
 window.cancelRelease=async function(){
