@@ -1,0 +1,70 @@
+/* ================= LOGIN BUTTON ================= */
+QPushButton#login_b {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00897B,
+        stop:1 #00695C
+    );
+    color: white;
+    border-radius: 16px;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 20px;
+    font-weight: bold;
+    border: none;
+    padding: 16px 32px;
+    letter-spacing: 1px;
+}
+
+QPushButton#login_b:pressed,
+QPushButton#login_b:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00695C,
+        stop:1 #004D40
+    );
+    padding-top: 18px;
+}
+
+
+/* ================= SIGN IN BUTTON ================= */
+QPushButton#sign_in {
+    background: transparent;
+    color: #00796B;
+    border-radius: 16px;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 20px;
+    font-weight: bold;
+    border: 2px solid #00796B;
+    padding: 16px 32px;
+    letter-spacing: 1px;
+}
+
+QPushButton#sign_in:pressed,
+QPushButton#sign_in:checked {
+    background: #65cbe4;
+    border-color: #295490;
+    color: #1f5eac;
+    padding-top: 18px;
+}
+
+
+/* ================= SERVICE BUTTON ================= */
+QPushButton#service_button {
+    background: transparent;
+    color: #90A4AE;
+    border-radius: 12px;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    border: 2px solid #90A4AE;
+    padding: 10px 20px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton#service_button:pressed,
+QPushButton#service_button:checked {
+    background: #ECEFF1;
+    border-color: #546E7A;
+    color: #546E7A;
+    padding-top: 12px;
+}

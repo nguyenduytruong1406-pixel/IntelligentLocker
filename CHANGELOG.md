@@ -4,6 +4,90 @@ Toàn bộ lịch sử thay đổi theo ngày, mới nhất ở trên.
 
 ---
 
+## [10/06/2026] — Migrate GUI Tkinter → PyQt6 · Fix face enroll/verify
+
+### 🖥 Migrate toàn bộ Kiosk GUI từ Tkinter sang PyQt6
+
+**Kiến trúc mới (`SML/`):**
+
+```
+main.py  ←  Entry point duy nhất
+  ├─ migrate DB + Firebase init
+  ├─ sync_tool.py --sync (subprocess)
+  ├─ sync_listener.start()
+  └─ QApplication + QStackedWidget (17 màn hình)
+```
+
+**Controllers mới (thay thế state machine Tkinter):**
+
+| Controller | Màn hình |
+|---|---|
+| `BeginController` | Idle |
+| `LoginController` | Nhập MSSV |
+| `RegisterController` | Đăng ký tài khoản |
+| `AuthMethodController` | Chọn xác thực (mặt / mật khẩu) |
+| `FaceController` | Camera auth + register (cùng widget, đổi mode) |
+| `FaceWorker` (QThread) | AI pipeline tách biệt hoàn toàn khỏi GUI thread |
+| `SelectModeController` | Menu sau đăng nhập |
+| `SelectLockerController` | Chọn tủ trống (sơ đồ tủ) |
+| `PassWordController` | Xác thực mật khẩu |
+| `SendEmailController` | Gửi OTP |
+| `EnterOtpController` | Nhập OTP |
+
+---
+
+### 🤖 FaceWorker — AI pipeline cải tiến
+
+**File:** `app/controllers/face_worker.py`
+
+**Multi-frame enroll (thay vì 1 frame cũ):**
+- Thu thập `ENROLL_FRAMES=10` embedding liên tiếp
+- Tính `np.mean()` → embedding chất lượng cao hơn, ít nhiễu
+- Signal mới `enroll_progress(int, int)` — hiển thị tiến độ `📸 3/10`
+
+**Tách liveness theo mode:**
+- `mode="register"` — **bỏ qua** `LIVENESS_FRAMES` gate (camera bật `use_ir=True`, liveness vẫn chạy nhưng không chặn)
+- `mode="auth"` — phải đạt đủ 5 frame liveness OK liên tiếp mới bắt đầu match
+
+**Guard `has_face` đầu `run()`:**
+- Kiểm tra `user["has_face"]` từ DB ngay trước khi bật camera
+- `no_face_registered.emit()` → `FaceController` redirect sang register tự động
+- Tránh bypass qua `auth_method_controller`
+
+**Signals:**
+```python
+frame_ready        = pyqtSignal(object)     # np.ndarray BGR
+face_detected      = pyqtSignal(bool)
+liveness_status    = pyqtSignal(bool, str)
+auth_success       = pyqtSignal(str, str)   # mssv, name
+auth_failed        = pyqtSignal(str)
+register_done      = pyqtSignal(object)     # avg embedding (10 frames)
+enroll_progress    = pyqtSignal(int, int)   # current, total
+face_log           = pyqtSignal(str, str, str)
+no_face_registered = pyqtSignal()
+```
+
+---
+
+### 🐛 Bug fixes
+
+**`user_repository.save_embedding()` — không có `return`:**
+- Cũ: hàm lưu thành công vào DB nhưng không `return True` → `auth_service` nhận `None` → UI báo "❌ Lưu thất bại" dù đã lưu xong
+- Fix: thêm `return True` / `return False` trong try/except
+
+**`sqlite3.Row.get()` không tồn tại:**
+- Cũ: `user.get("has_face")` → `AttributeError` âm thầm → check bypass
+- Fix: đổi thành `user["has_face"]` ở tất cả chỗ
+
+**`select_mode.py` — không check trạng thái tủ khi vào màn hình:**
+- Cũ: sau đăng nhập luôn hiện menu Mở tủ + Trả tủ dù chưa có tủ
+- Fix: thêm `showEvent()` → `check_user_has_locker()`:
+  - Chưa có tủ → `go_to_select_locker()` ngay lập tức
+  - Đã có tủ → hiện Mở tủ + Trả tủ bình thường
+
+**`auth_method_controller.go_to_face()` — mode check:**
+- Đã dùng `user["has_face"]` đúng (fix cùng với `sqlite3.Row` bug)
+
 ## [05/06/2026] — OTP trả tủ server-side · Kiosk Status realtime
 
 ### 🔐 Bảo mật OTP — Server-side verify (sync_listener.py + user-dashboard.html)

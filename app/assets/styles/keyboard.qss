@@ -1,0 +1,121 @@
+/* ================= SYSTEM BUTTON ================= */
+QPushButton.systemButton {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00897B,
+        stop:1 #00695C
+    );
+    color: #ffffff;
+    border-radius: 16px;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 16px;
+    font-weight: bold;
+    border: 2px solid #004D40;
+    padding: 12px 24px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton.systemButton:pressed,
+QPushButton.systemButton:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00695C,
+        stop:1 #004D40
+    );
+    padding-top: 14px;
+}
+
+
+/* ================= KEYBOARD CONTAINER ================= */
+#keyboard_container {
+    background-color: #ECEFF1;
+    border-top: 2px solid #B0BEC5;
+    border-radius: 12px;
+}
+
+
+/* ================= SCROLLBAR ================= */
+QScrollBar:vertical {
+    width: 25px;
+    background: #f0f0f0;
+    border-radius: 8px;
+}
+
+QScrollBar::handle:vertical {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #00897B,
+        stop:1 #00796B
+    );
+    min-height: 40px;
+    border-radius: 8px;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+
+/* ================= NORMAL BUTTON ================= */
+QPushButton#normalButton {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #ffffff,
+        stop:1 #f5f5f5
+    );
+    color: #212121;
+    border-radius: 12px;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 16px;
+    font-weight: bold;
+    border: 2px solid #B0BEC5;
+    padding: 8px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton#normalButton:pressed,
+QPushButton#normalButton:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00897B,
+        stop:1 #00695C
+    );
+    border-color: #004D40;
+    color: #ffffff;
+    padding-top: 10px;
+}
+
+
+/* ================= SPECIAL BUTTON ================= */
+QPushButton#specialButton {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #78909C,
+        stop:1 #546E7A
+    );
+    color: #ffffff;
+    border-radius: 12px;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    border: 2px solid #37474F;
+    padding: 8px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton#specialButton:pressed,
+QPushButton#specialButton:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00897B,
+        stop:1 #00695C
+    );
+    border-color: #004D40;
+    padding-top: 10px;
+}

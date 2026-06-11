@@ -10,20 +10,17 @@
 
 ```bash
 # 1. Cài thư viện Python
-py -3.11 -m pip install opencv-python numpy dlib mediapipe Pillow \
-    firebase-admin scikit-image scikit-learn winsdk python-dotenv
+py -3.11 -m pip install PyQt6 opencv-python numpy dlib mediapipe \
+    firebase-admin scikit-image python-dotenv winsdk
 
 # 2. Tạo file môi trường
 cp .env.example app_password.env
 # → Điền MAIL_SENDER, MAIL_PASSWORD, MAIL_SENDER_NAME
 
-# 3. Đồng bộ dữ liệu (chạy 1 lần khi mới boot hoặc sau khi mất mạng lâu)
-py -3.11 sync_tool.py
+# 3. Khởi động Kiosk (tự chạy sync_tool + sync_listener ngầm)
+py -3.11 main.py
 
-# 4. Khởi động Kiosk (tự kéo sync_listener lên ngầm)
-py -3.11 kiosk_gui.py
-
-# 5. Chạy Web Admin local (tab riêng)
+# 4. Chạy Web Admin local (tab riêng)
 cd public
 py -m http.server 5500
 # → Mở http://localhost:5500
@@ -37,106 +34,152 @@ py -m http.server 5500
 ## 🗂 Cấu trúc dự án
 
 ```text
-test_db_ver1/
-├── core/                            ← Tầng Database
-│   ├── db.py                        ← _conn(), migrate(), constants
-│   ├── user_db.py                   ← register_user, get_user, load/save_embedding
-│   ├── locker_db.py                 ← open_locker, assign_locker, release_locker,
-│   │                                   auto_cleanup_inactive, log_locker_delete
-│   └── log_db.py                    ← log_access, export_csv, rate_limit
+SML/
+├── app/
+│   ├── controllers/                     ← Tầng UI (PyQt6 QMainWindow)
+│   │   ├── begin_controller.py          ← Màn hình chờ (idle)
+│   │   ├── login_controller.py          ← Đăng nhập bằng MSSV
+│   │   ├── register_controller.py       ← Đăng ký tài khoản sinh viên
+│   │   ├── auth_method_controller.py    ← Chọn phương thức xác thực (mặt / mật khẩu)
+│   │   ├── face_controller.py           ← Giao diện camera (auth + register mode)
+│   │   ├── face_worker.py               ← QThread AI pipeline (liveness · landmark · embed)
+│   │   ├── password_controller.py       ← Xác thực bằng mật khẩu
+│   │   ├── select_mode.py               ← Menu sau đăng nhập (Mở tủ / Trả tủ / Chọn tủ)
+│   │   ├── select_locker_controller.py  ← Giao diện chọn tủ trống
+│   │   ├── send_otp_controller.py       ← Gửi OTP qua email
+│   │   ├── enter_otp_controller.py      ← Nhập và xác minh OTP
+│   │   ├── service_controller.py        ← Màn hình dịch vụ
+│   │   ├── menu_service.py              ← Menu dịch vụ
+│   │   ├── loading_controller.py        ← Màn hình loading
+│   │   └── success_controller.py        ← Màn hình thành công
+│   │
+│   ├── database/
+│   │   ├── database.py                  ← migrate(), kết nối SQLite
+│   │   ├── user_repository.py           ← CRUD users, save/load embedding
+│   │   └── locker_repository.py         ← CRUD lockers, log
+│   │
+│   ├── services/
+│   │   ├── auth_service.py              ← Xác thực, lưu embedding, get_name_user
+│   │   ├── locker_service.py            ← open/assign/return/check_user_has_locker
+│   │   ├── cleanup_service.py           ← Thu hồi tủ idle, pending expire
+│   │   └── firebase_hooks.py            ← Push thay đổi lên Firebase
+│   │
+│   ├── utils/
+│   │   ├── session.py                   ← Session.current_user, Session.user_name
+│   │   └── ktv_config.py                ← Cấu hình KTV
+│   │
+│   └── widgets/
+│       ├── virtual_keyboard.py          ← Bàn phím ảo cảm ứng QWERTY
+│       ├── locker_button.py             ← Widget nút tủ (sơ đồ tủ)
+│       ├── touch_scroll_area.py         ← ScrollArea hỗ trợ cảm ứng
+│       └── keyboard_manager.py          ← Quản lý focus bàn phím
 │
 ├── hardware/
-│   └── camera.py                    ← CameraBackend (winsdk), parse_bgr/gray
+│   └── camera.py                        ← CameraBackend (winsdk IR + color)
 │
 ├── ai/
-│   ├── models.py                    ← Load dlib singleton (shape_pred, face_encoder)
-│   ├── face_utils.py                ← MediaPipe detect_faces_bgr, center_face
-│   └── ai_utils.py                  ← liveness(), landmarks(), embedding(), hash_password()
+│   ├── models.py                        ← Load dlib singleton (shape_pred, face_encoder)
+│   ├── face_utils.py                    ← MediaPipe detect, center_face
+│   └── ai_utils.py                      ← liveness(), landmarks(), embedding()
 │
-├── gui/
-│   ├── kiosk_app.py                 ← Class KioskApp — UI + state machine
-│   └── theme.py                     ← Màu sắc, font, SCREEN_W/H, VERIFY_FRAMES
-│
-├── public/                          ← Web frontend
-│   ├── landing.html                 ← Entry point (3 portal)
-│   ├── login.html                   ← Đăng nhập admin
-│   ├── index.html                   ← Admin dashboard (5 tab)
-│   ├── register.html                ← Sinh viên đăng ký tài khoản
-│   ├── user-dashboard.html          ← Sinh viên tra cứu tủ + yêu cầu trả tủ (OTP)
-│   ├── emailjs_config.js            ← EmailJS credentials (KHÔNG commit git)
+├── public/                              ← Web frontend (giữ nguyên từ backup)
+│   ├── landing.html                     ← Entry point (3 portal)
+│   ├── login.html                       ← Đăng nhập admin
+│   ├── index.html                       ← Admin dashboard (5 tab)
+│   ├── register.html                    ← Sinh viên đăng ký tài khoản
+│   ├── user-dashboard.html              ← Sinh viên tra cứu tủ + yêu cầu trả tủ (OTP)
+│   ├── emailjs_config.js                ← EmailJS credentials (KHÔNG commit git)
 │   └── 404.html
 │
-├── kiosk_gui.py                     ← Entry point — chạy KioskApp + 3 daemon threads
-├── sync_listener.py                 ← Firebase Websocket listener (realtime)
-├── sync_tool.py                     ← Đồng bộ 2 chiều thủ công
-├── IntelligentLocker.db             ← SQLite DB chính
-├── blaze_face_short_range.tflite    ← MediaPipe model
-├── app_password.env                 ← Gmail credentials (KHÔNG commit git)
-├── private_key_lockers.json         ← Firebase Service Account (KHÔNG commit git)
-└── firebase.json / .firebaserc      ← Firebase Hosting config
+├── main.py                              ← Entry point — migrate DB + sync + PyQt6 app
+├── sync_listener.py                     ← Firebase Websocket listener (realtime)
+├── sync_tool.py                         ← Đồng bộ 2 chiều thủ công
+├── IntelligentLocker.db                 ← SQLite DB chính
+├── blaze_face_short_range.tflite        ← MediaPipe model
+├── app_password.env                     ← Gmail credentials (KHÔNG commit git)
+└── private_key_lockers.json             ← Firebase Service Account (KHÔNG commit git)
 ```
-
-### ❌ Files dư thừa (có thể xóa)
-
-| File | Lý do |
-|---|---|
-| `secure_db.py` | Thay bởi `core/locker_db.py` |
-| `verify.py` | Gộp vào pipeline chính |
-| `face_db.enc` + `db.key` | Đã migrate sang `IntelligentLocker.db` |
-| `audit.db` | Thay bởi `LockerLog` + `FaceLog` trong DB chính |
-| `face_db_pkl.bak` | Backup cũ |
-| `collect_liveness.py` | Chỉ dùng khi training |
-| `main_gui.py` | ⚠️ Prototype cũ — thay bởi `gui/kiosk_app.py` |
-
-> `liveness_check.py`, `enroll.py`, `verify_with_liveness.py` đã được gộp trực tiếp vào pipeline chính.
 
 ---
 
 ## 🏗 Kiến trúc hệ thống
 
-### Pipeline xác thực khuôn mặt
+### Kiosk Stack Index (QStackedWidget)
+
+| Index | Controller | Màn hình |
+|---|---|---|
+| 0 | `BeginController` | Màn hình chờ (idle) |
+| 1 | `LoginController` | Nhập MSSV |
+| 2 | `RegisterController` | Đăng ký tài khoản |
+| 3 | `SelectModeController` | Menu Mở tủ / Trả tủ |
+| 4 | `SelectLockerController` | Chọn tủ trống |
+| 5 | `LoadingController` | Loading |
+| 6 | `SuccessController` | Thành công |
+| 7 | `VideoScreenController` | Video giới thiệu |
+| 8 | `AuthMethodController` | Chọn xác thực (mặt / mật khẩu) |
+| 9 | `PassWordController` | Nhập mật khẩu |
+| 11 | `SendEmailController` | Gửi OTP |
+| 12 | `EnterOtpController` | Nhập OTP |
+| 13 | `ServiceController` | Dịch vụ |
+| 14 | `MenuServiceController` | Menu dịch vụ |
+| 15 | `FaceController` | Camera xác thực / đăng ký khuôn mặt |
+
+### Luồng điều hướng Kiosk
 
 ```
-Thread 1 — Camera (asyncio + winsdk)
-    ↓ Frame Queue (maxsize=1 — luôn lấy frame mới nhất)
-Thread 2 — AI
-    • IR liveness check  (rule-based mean/std)
-    • MediaPipe BlazeFace detect
-    • dlib ResNet 128-D embedding
-    ↓ Result Queue (maxsize=1)
-Thread 3 — UI (main thread tkinter)
-    • Render ~30 FPS
-    • Draw overlay + consecutive counter
-    • Rate limit check (max 5 fails → lockout 60s)
-    → PASS → open_locker() → SQLite + Firebase
-```
-
-### Kiosk State Machine
-
-```
-S_IDLE
-  └─ nhập MSSV ──────────────────────────────────► S_FACE_MSSV
+BeginController (Idle)
+  └─ nhập MSSV ──────────────────────────────────► LoginController
                                                         │
-                                          camera bật, xác thực khuôn mặt
-                                                        │
-                                                   _after_login()
-                                                   ┌────┴────┐
-                                              có tủ          chưa có tủ
-                                                │                │
-                                        S_LOCKER_MENU     _show_locker_picker()
-                                        ┌───────┴──────┐
-                                   📦 Gửi đồ      🔓 Trả tủ
-                                        │               │
-                                  open_locker()   confirm 2 bước
-                                                  → release_locker()
-                                                  → LOCKER_DELETE_LOG
+                                              AuthMethodController
+                                              ┌──────────┴──────────┐
+                                         Khuôn mặt            Mật khẩu
+                                              │                     │
+                                        FaceController      PasswordController
+                                        (mode=auth)               │
+                                         ┌────┴────┐              │
+                                    has_face    no_face           │
+                                         │          │             │
+                                    xác thực    FaceController    │
+                                    khuôn mặt  (mode=register)   │
+                                         │                        │
+                                         └──────────┬─────────────┘
+                                                    ▼
+                                           SelectModeController
+                                           ┌────────┴────────┐
+                                      Chưa có tủ        Đã có tủ
+                                           │                 │
+                                  SelectLockerController  ┌──┴──┐
+                                  (chọn tủ trống)       Mở   Trả
+                                           │             tủ    tủ
+                                     gán tủ → open
+```
+
+### Pipeline AI (FaceWorker — QThread)
+
+```
+QThread FaceWorker.run()
+    │
+    ├─ [mode=register] Bỏ qua liveness gate
+    │       camera.get() → center_face() → landmarks() → embedding()
+    │       Thu thập ENROLL_FRAMES=10 → np.mean() → register_done.emit()
+    │
+    └─ [mode=auth]
+            camera.get() → center_face()
+                │
+                ├─ liveness(IR) — phải đạt LIVENESS_FRAMES=5 liên tiếp
+                │
+                ├─ landmarks() → embedding()
+                │
+                └─ So sánh L2 với known_embeddings
+                   MATCH_THRESHOLD=0.45, CONFIRM_FRAMES=3
+                   → auth_success.emit(mssv, name)
 ```
 
 ### Firebase Sync Architecture
 
 ```
 Kiosk / SQLite ──────────────────────────────────► Firebase
-   (locker_db.py inline khi open/assign/release)
+   (firebase_hooks.py — inline khi open/assign/release)
 
 Firebase ────────────────────────────────────────► SQLite
    (sync_listener.py — Websocket push, ~0ms delay)
@@ -145,8 +188,6 @@ Firebase ───────────────────────�
 Firebase ◄──────────────────────────────────────► SQLite
    (sync_tool.py — chạy 1 lần khi boot hoặc sau mất mạng)
 ```
-
-> **Không dùng polling** — toàn bộ Firebase → Local dùng Websocket push để tiết kiệm chi phí đọc.
 
 ### Luồng OTP trả tủ (server-side verify)
 
@@ -181,21 +222,6 @@ landing.html
   └─► user-dashboard.html (tra cứu tủ, yêu cầu trả tủ)
 ```
 
-### Daemon Threads trong kiosk_gui.py
-
-```python
-threading.Thread(target=_heartbeat_loop,       daemon=True).start()  # mỗi 30s
-threading.Thread(target=_cleanup_loop,         daemon=True).start()  # mỗi 1h
-threading.Thread(target=_pending_expire_loop,  daemon=True).start()  # mỗi 6h
-app.after(5_000, _drain_warn_queue, app)                             # tkinter-safe
-```
-
-| Thread | Chu kỳ | Chức năng |
-|---|---|---|
-| `_heartbeat_loop` | 30s | Ghi `/kiosk_status/last_seen` lên Firebase |
-| `_cleanup_loop` | 1h | Thu hồi tủ idle ≥7 ngày, cảnh báo ngày 6 |
-| `_pending_expire_loop` | 6h | Xóa tài khoản chờ duyệt quá hạn, gửi mail |
-
 ---
 
 ## 🌐 Web Admin
@@ -216,115 +242,39 @@ app.after(5_000, _drain_warn_queue, app)                             # tkinter-s
 |---|---|
 | 🏠 Trang Chủ | 5 stat cards: Đã duyệt · Chờ duyệt · Tủ trống · Tủ đang dùng · **Kiosk status** |
 | 👥 Sinh Viên | Bảng users · tìm kiếm · duyệt/khóa · gán tủ · xóa thẻ thủ công |
-| 🔒 Tủ Khóa | Grid L01–L09 · idle indicator 🟡🔴 · detail modal |
-| 📋 Nhật Ký | 50 events gần nhất · Export CSV |
-| 🗑 Lịch Sử Tủ | Toàn bộ LOCKER_DELETE_LOG · filter · Export CSV |
-
-**Tính năng nổi bật:**
-- Kiosk status badge realtime (Online 🟢 / Offline 🔴) — hiện trên mọi tab
-- Toast + Browser notification khi có yêu cầu trả tủ mới
-- Idle indicator: 🟡 5–6 ngày · 🔴 ≥7 ngày (có thể thu hồi)
-- Auto-expire thẻ pending sau N ngày (cấu hình qua modal ⚙️)
-- Dark mode · Export CSV · Material Symbols Rounded icons
-
-### Lưu ý kỹ thuật
-
-```bash
-# Bắt buộc chạy qua HTTP — Firebase Auth không hoạt động với file://
-py -m http.server 5500
-```
-
-- Hàm trong `<script type="module">` phải gán vào `window.xxx` để inline event gọi được
-- `onValue` listeners bọc trong `startDataListeners()` — chỉ gọi sau `onAuthStateChanged`
+| 🗄 Tủ | Sơ đồ tủ realtime · gán/trả thủ công |
+| 🔄 Trả Tủ | Bảng yêu cầu trả tủ pending · xác nhận trả |
+| 📋 Lịch Sử | Log LOCKER_DELETE_LOG · search · export CSV |
 
 ---
 
-## 📐 Database Schema
-
-### ERD
-
-```mermaid
-erDiagram
-    Users {
-        TEXT mssv PK
-        TEXT name
-        TEXT role
-        INTEGER is_approved
-        INTEGER has_face
-        BLOB face_embedding
-        TEXT password
-        TEXT email
-    }
-    Lockers {
-        TEXT locker_id PK
-        TEXT size
-        TEXT status
-        TEXT current_mssv FK
-        TEXT assigned_date
-        TEXT last_open
-    }
-    LockerLog {
-        INTEGER id PK
-        TEXT timestamp
-        TEXT event
-        TEXT locker_id FK
-        TEXT mssv
-        TEXT name
-    }
-    FaceLog {
-        INTEGER id PK
-        TEXT timestamp
-        TEXT event
-        TEXT mssv
-        TEXT name
-    }
-    LOCKER_DELETE_LOG {
-        INTEGER ID PK
-        TEXT MSSV
-        TEXT LOCKER_ID
-        TEXT DELETE_TIME
-        TEXT REASON
-    }
-
-    Users ||--o{ Lockers     : "current_mssv"
-    Lockers ||--o{ LockerLog : "locker_id"
-```
-
-### Chi tiết bảng
-
-| Bảng | Sync Firebase | Mô tả |
-|---|---|---|
-| `Users` | ✅ `/users` | Tài khoản sinh viên + admin |
-| `Lockers` | ✅ `/lockers` | Trạng thái 9 tủ L01–L09 |
-| `LockerLog` | ✅ `/logs` | Mọi sự kiện OPEN / ASSIGN / RELEASE |
-| `FaceLog` | ❌ local only | FACE_REGISTER / FACE_VERIFY / FACE_FAIL |
-| `LOCKER_DELETE_LOG` | ✅ `/locker_delete_logs` | Lịch sử thu hồi tủ |
+## 🗄 Database Schema (SQLite)
 
 ```sql
 Users (
-    mssv           TEXT PRIMARY KEY,
-    name           TEXT NOT NULL,
-    role           TEXT DEFAULT 'student',    -- 'student' | 'admin'
-    is_approved    INTEGER DEFAULT 0,         -- 0 | 1
-    has_face       INTEGER DEFAULT 0,         -- 0 | 1
-    face_embedding BLOB,                      -- numpy array pickle'd (128-D float64)
-    password       TEXT,                      -- SHA-256 hash
-    email          TEXT DEFAULT ''
+    mssv          TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    password_hash TEXT NOT NULL,         -- SHA-256
+    is_approved   INTEGER DEFAULT 0,     -- 0 | 1
+    has_face      INTEGER DEFAULT 0,     -- 0 | 1
+    face_embedding BLOB,                 -- pickle(np.ndarray 128-D)
+    role          TEXT DEFAULT 'student',
+    email         TEXT DEFAULT ''
 )
 
 Lockers (
-    locker_id     TEXT PRIMARY KEY,           -- 'L01'...'L09'
-    size          TEXT NOT NULL,              -- 'small' | 'big'
-    status        TEXT DEFAULT 'empty',       -- 'empty' | 'occupied' (luôn lowercase)
+    locker_id     TEXT PRIMARY KEY,      -- 'L01'...'L09'
+    size          TEXT NOT NULL,         -- 'small' | 'big'
+    status        TEXT DEFAULT 'empty',  -- 'empty' | 'occupied'
     current_mssv  TEXT REFERENCES Users(mssv),
-    assigned_date TEXT DEFAULT '',            -- 'YYYY-MM-DD HH:MM:SS' | ''
-    last_open     TEXT DEFAULT ''             -- 'YYYY-MM-DD HH:MM:SS' | ''
+    assigned_date TEXT DEFAULT '',       -- 'YYYY-MM-DD HH:MM:SS' | ''
+    last_open     TEXT DEFAULT ''        -- 'YYYY-MM-DD HH:MM:SS' | ''
 )
 
 LockerLog (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL,
-    event     TEXT NOT NULL,                  -- OPEN_LOCKER | ASSIGN_LOCKER | RELEASE_LOCKER
+    event     TEXT NOT NULL,             -- OPEN_LOCKER | ASSIGN_LOCKER | RELEASE_LOCKER
     locker_id TEXT REFERENCES Lockers(locker_id),
     mssv      TEXT,
     name      TEXT
@@ -335,8 +285,9 @@ LOCKER_DELETE_LOG (
     MSSV        TEXT NOT NULL,
     LOCKER_ID   TEXT NOT NULL,
     DELETE_TIME TEXT NOT NULL,
-    REASON      TEXT NOT NULL                 -- student_release | auto_inactive_7days
-)                                             -- | admin_force | admin_deactivate | admin_delete_card
+    REASON      TEXT NOT NULL            -- student_release | auto_inactive_7days
+)                                        -- | admin_force | admin_deactivate
+                                         -- | admin_delete_card | auto_expired_pending
 ```
 
 ---
@@ -378,27 +329,13 @@ LOCKER_DELETE_LOG (
       ".read": "auth != null",
       "$mssv": { ".read": true, ".write": true }
     },
-    "otp_requests": {
-      "$mssv": { ".read": "auth != null", ".write": true }
-    },
-    "otp_tokens": {
-      "$mssv": { ".read": "auth != null", ".write": "auth != null" }
-    },
-    "verify_attempts": {
-      "$mssv": { ".read": "auth != null", ".write": true }
-    },
-    "verify_results": {
-      "$mssv": { ".read": true, ".write": "auth != null" }
-    }
+    "otp_requests":  { "$mssv": { ".read": "auth != null", ".write": true } },
+    "otp_tokens":    { "$mssv": { ".read": "auth != null", ".write": "auth != null" } },
+    "verify_attempts":{ "$mssv": { ".read": "auth != null", ".write": true } },
+    "verify_results": { "$mssv": { ".read": true, ".write": "auth != null" } }
   }
 }
 ```
-
-**Giải thích quan trọng:**
-- `otp_tokens` — chỉ Admin SDK đọc/ghi; client không bao giờ thấy hash
-- `verify_attempts` — client ghi code nhập vào; server verify
-- `verify_results` — client đọc kết quả; chỉ server ghi
-- `/users/$mssv` ghi: `!data.exists()` cho phép sinh viên tự đăng ký lần đầu
 
 ### Sync Rules ưu tiên
 
@@ -413,13 +350,13 @@ LOCKER_DELETE_LOG (
 
 ## ⚙️ Cấu hình
 
-### .env / app_password.env
+### app_password.env
 
 | Biến | Bắt buộc | Mô tả |
 |---|---|---|
 | `MAIL_SENDER` | Không | Gmail dùng để gửi OTP và mail thông báo |
-| `MAIL_PASSWORD` | Không | Gmail App Password (16 ký tự) — tạo tại myaccount.google.com/apppasswords |
-| `MAIL_SENDER_NAME` | Không | Tên hiển thị trong email (mặc định: "Smart Locker — HCMUTE") |
+| `MAIL_PASSWORD` | Không | Gmail App Password (16 ký tự) |
+| `MAIL_SENDER_NAME` | Không | Tên hiển thị trong email |
 
 > Nếu chưa cấu hình → tính năng mail tắt im lặng, hệ thống vẫn hoạt động bình thường.
 
@@ -451,26 +388,25 @@ IntelligentLocker.db
 
 | Tham số | Module | Giá trị | Ý nghĩa |
 |---|---|---|---|
-| `THRESHOLD` | `ai/ai_utils.py` | `0.45` | Ngưỡng khoảng cách embedding khuôn mặt |
-| `VERIFY_FRAMES` | `gui/theme.py` | `3` | Số frame liên tiếp cần PASS |
-| `MAX_FAILS` | `core/locker_db.py` | `5` | Số lần fail trước khi lockout |
-| `LOCKOUT_SECS` | `core/locker_db.py` | `60` | Thời gian lockout (giây) |
-| `BRIGHT_THRESHOLD` | `ai/ai_utils.py` | `220` | IR mean > → FAKE (ảnh in) |
-| `DARK_THRESHOLD` | `ai/ai_utils.py` | `30` | IR mean < → FAKE (che camera) |
-| `TEXTURE_MIN` | `ai/ai_utils.py` | `8.0` | IR std < → FAKE |
+| `MATCH_THRESHOLD` | `face_worker.py` | `0.45` | Ngưỡng L2 distance embedding |
+| `CONFIRM_FRAMES` | `face_worker.py` | `3` | Số frame liên tiếp match mới xác nhận |
+| `LIVENESS_FRAMES` | `face_worker.py` | `5` | Số frame liveness OK trước khi match |
+| `ENROLL_FRAMES` | `face_worker.py` | `10` | Số frame thu thập khi đăng ký mặt |
+| `MAX_FAILS` | `face_worker.py` | `5` | Số lần fail trước khi lockout |
+| `LOCKOUT_SECS` | `face_worker.py` | `60` | Thời gian lockout (giây) |
 | `KIOSK_ONLINE_SECS` | `user-dashboard.html` | `90` | last_seen < 90s → Kiosk ONLINE |
 | `OTP_MAX_ATTEMPTS` | `sync_listener.py` | `5` | Số lần thử OTP sai tối đa |
-| `PENDING_EXPIRE_DAYS` | `kiosk_gui.py` | `7` | Ngày tự xóa tài khoản chờ duyệt |
-| `PENDING_WARN_DAYS` | `kiosk_gui.py` | `2` | Ngày gửi mail cảnh báo trước khi xóa |
+| `PENDING_EXPIRE_DAYS` | `cleanup_service.py` | `7` | Ngày tự xóa tài khoản chờ duyệt |
+| `PENDING_WARN_DAYS` | `cleanup_service.py` | `2` | Ngày gửi mail cảnh báo trước khi xóa |
 
 ---
 
-## 🔄 Sync Tool (sync_tool.py)
+## 🔄 Sync Tool
 
 ```bash
-py -3.11 sync_tool.py          # Full sync 2 chiều (khuyến nghị khi boot)
-py -3.11 sync_tool.py --pull   # Chỉ Firebase → SQLite
-py -3.11 sync_tool.py --push   # Chỉ SQLite → Firebase
+py -3.11 sync_tool.py           # Full sync 2 chiều (chạy tự động khi main.py start)
+py -3.11 sync_tool.py --pull    # Chỉ Firebase → SQLite
+py -3.11 sync_tool.py --push    # Chỉ SQLite → Firebase
 ```
 
 | | `sync_listener.py` | `sync_tool.py` |
@@ -486,12 +422,12 @@ py -3.11 sync_tool.py --push   # Chỉ SQLite → Firebase
 
 | Tầng | Công nghệ | Lý do chọn |
 |---|---|---|
+| GUI Kiosk | **PyQt6** + QStackedWidget | Native, thread-safe signals, dễ tích hợp AI |
 | Face Detection | Google MediaPipe BlazeFace | 5–15ms/frame trên CPU, góc rộng |
-| Face Embedding | dlib ResNet 128-D | Tương thích DB hiện có |
+| Face Embedding | dlib ResNet 128-D | Tương thích DB hiện có, threshold 0.45 |
 | IR Liveness | Rule-based (mean/std) | Không cần train, không cần GPU |
 | Database | SQLite | Nhẹ, hoạt động offline |
 | Cloud Sync | Firebase Realtime DB + Admin SDK | Realtime push, không cần pyrebase |
-| GUI Kiosk | tkinter + PIL | Có sẵn, nhẹ, thread-safe với after() |
 | Camera | winsdk (Windows Media Capture) | Truy cập IR stream Intel RealSense |
 | OTP Email | Gmail SMTP (primary) + EmailJS (fallback) | Không cần backend server |
 | Hardware | Waveshare 7" 1024×600 cảm ứng | Màn hình kiosk nhúng |
@@ -507,20 +443,20 @@ py -3.11 sync_tool.py --push   # Chỉ SQLite → Firebase
 | 1 kiosk | Kiến trúc hiện tại giả định 1 kiosk duy nhất |
 | Offline EmailJS | OTP mode offline sinh code phía client — kém bảo mật hơn online mode |
 
-
 ---
 
 ## 📅 Changelog tóm tắt
 
 | Ngày | Nội dung |
 |---|---|
-| 19–27/05 | Khởi tạo dự án, refactor module hóa, face enroll/verify pipeline |
+| 19–27/05 | Khởi tạo dự án, refactor module hóa, face enroll/verify pipeline (Tkinter) |
 | 27/05 | Thêm Trả tủ (S_LOCKER_MENU), auto-cleanup 7 ngày, LOCKER_DELETE_LOG |
 | 28/05 | Web: xóa thẻ thủ công, auto-expire pending, modal Cài Đặt tập trung |
 | 29/05 | Pending expire daemon, gửi mail warning, sync `last_open` 2 chiều |
 | 03/06 | 2FA OTP email khi đăng nhập kiosk, fix JS Date Trap, fix Firebase rules |
 | 04/06 | Fix đồng bộ `assigned_date`/`last_open`, heartbeat kiosk, bàn phím ảo 1024×600 |
 | 05/06 | Kiosk status realtime trên admin, OTP trả tủ server-side verify (SHA-256 hash) |
+| 10/06 | **Migrate GUI Tkinter → PyQt6** · FaceWorker QThread · multi-frame enroll (10 frames) · fix `select_mode` check has_locker · fix `save_embedding` return value |
 
 > Chi tiết từng thay đổi xem tại [`CHANGELOG.md`](./CHANGELOG.md)
 

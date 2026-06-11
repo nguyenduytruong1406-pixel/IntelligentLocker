@@ -63,6 +63,7 @@ node_modules/
 .yarn-integrity
 
 # dotenv environment variables file
+.env
 *.env
 .warn_flags/
 
@@ -102,3 +103,7 @@ file test faceid/
 
 download_file/
 
+
+*.db
+
+app/assets/icon/feather-main/ 

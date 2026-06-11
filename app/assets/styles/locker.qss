@@ -1,0 +1,170 @@
+/* =========================
+AVAILABLE
+========================= */
+QPushButton[lockerState="available"] {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #ffffff,
+        stop:1 #e0f2f1
+    );
+    color: #00796B;
+    border: 2px solid #00796B;
+    border-radius: 16px;
+    font-family: 'Segoe UI', sans-serif;
+    font-weight: bold;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton[lockerState="available"]:pressed,
+QPushButton[lockerState="available"]:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #b2dfdb,
+        stop:1 #80cbc4
+    );
+    padding-top: 4px;
+}
+
+
+/* =========================
+BUSY
+========================= */
+QPushButton[lockerState="busy"] {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #ef5350,
+        stop:1 #e53935
+    );
+    color: white;
+    border: 2px solid #c62828;
+    border-radius: 16px;
+    font-family: 'Segoe UI', sans-serif;
+    font-weight: bold;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton[lockerState="busy"]:pressed,
+QPushButton[lockerState="busy"]:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #c62828,
+        stop:1 #b71c1c
+    );
+    padding-top: 4px;
+}
+
+
+/* =========================
+SELECTED
+========================= */
+QPushButton[lockerState="selected"] {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #66bb6a,
+        stop:1 #43a047
+    );
+    color: white;
+    border: 2px solid #2e7d32;
+    border-radius: 16px;
+    font-family: 'Segoe UI', sans-serif;
+    font-weight: bold;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton[lockerState="selected"]:pressed,
+QPushButton[lockerState="selected"]:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #2e7d32,
+        stop:1 #1b5e20
+    );
+    padding-top: 4px;
+}
+
+
+/* =========================
+MY LOCKER
+========================= */
+QPushButton[lockerState="mylocker"] {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #FFD600,
+        stop:1 #F9A825
+    );
+    color: #212121;
+    border: 2px solid #F57F17;
+    border-radius: 16px;
+    font-family: 'Segoe UI', sans-serif;
+    font-weight: bold;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton[lockerState="mylocker"]:pressed,
+QPushButton[lockerState="mylocker"]:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #F9A825,
+        stop:1 #F57F17
+    );
+    padding-top: 4px;
+}
+
+
+/* =========================
+MAINTENANCE
+========================= */
+QPushButton[lockerState="maintenance"] {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #FFA726,
+        stop:1 #FB8C00
+    );
+    color: white;
+    border: 2px solid #E65100;
+    border-radius: 16px;
+    font-family: 'Segoe UI', sans-serif;
+    font-weight: bold;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton[lockerState="maintenance"]:pressed,
+QPushButton[lockerState="maintenance"]:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #E65100,
+        stop:1 #BF360C
+    );
+    padding-top: 4px;
+}
+/* =========================
+MAINTENANCE SELECTED
+========================= */
+QPushButton[lockerState="maintenance_selected"] {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #FB8C00,
+        stop:1 #E65100
+    );
+    color: white;
+    border: 2px solid #BF360C;
+    border-radius: 16px;
+    font-family: 'Segoe UI', sans-serif;
+    font-weight: bold;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton[lockerState="maintenance_selected"]:pressed,
+QPushButton[lockerState="maintenance_selected"]:checked {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #E65100,
+        stop:1 #BF360C
+    );
+    padding-top: 4px;
+}
