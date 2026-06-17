@@ -4,6 +4,60 @@ Toàn bộ lịch sử thay đổi theo ngày, mới nhất ở trên.
 
 ---
 
+## [17/06/2026] — Chuyển face recognition sang IR · Fix liveness rolling-window
+
+### 🌓 Nhận diện khuôn mặt: RGB → IR
+
+**Vấn đề:** Pipeline cũ chỉ dùng IR cho liveness check, còn `landmarks()` + `embedding()` chạy trên frame màu (RGB/color). Trong điều kiện thiếu sáng (Makerspace ban đêm, ánh sáng không đều), ảnh màu mờ và thiếu chi tiết → embedding kém ổn định → `best_dist` tăng cao → false reject dù đúng người.
+
+**Giải pháp:** Camera của kiosk có sẵn 2 sensor riêng trong cùng cụm (`IR Camera` + `USB2.0 FHD UVC WebCam`, cùng `MediaFrameSourceGroup`). IR illuminator phát sáng riêng, không phụ thuộc ánh sáng phòng → ảnh đồng nhất hơn nhiều giữa các lần chụp.
+
+**`ai/ai_utils.py` — thêm `ir_to_bgr()`:**
+```python
+def ir_to_bgr(ir_img: np.ndarray) -> np.ndarray:
+    """Convert IR grayscale (H,W) → BGR giả (H,W,3) để feed vào dlib/MediaPipe."""
+    return cv2.cvtColor(ir_img, cv2.COLOR_GRAY2BGR)
+```
+3 channel giống nhau vẫn đủ cho dlib 68-landmark và MediaPipe BlazeFace hoạt động — cả 2 model chỉ cần cấu trúc hình học và độ tương phản, không phụ thuộc màu thật.
+
+**`app/controllers/face_worker.py` — đổi nguồn frame cho recognition:**
+```python
+color, ir = self._camera.get()
+
+if ir is not None:
+    recog_frame = ir_to_bgr(ir)     # ưu tiên IR
+elif color is not None:
+    recog_frame = color              # fallback nếu IR chưa sẵn sàng
+```
+- `center_face()`, `landmarks()`, `embedding()` đều chạy trên `recog_frame` (IR khi có)
+- `liveness()` vẫn chạy trên `ir` gốc (grayscale thật, không qua `ir_to_bgr`)
+- UI preview (`frame_ready`) vẫn emit `color` để người dùng thấy ảnh tự nhiên — chỉ pipeline AI chạy trên IR, không đổi gì về mặt hiển thị
+
+> ⚠️ **Breaking change cho dữ liệu cũ:** embedding train trên RGB và embedding train trên IR nằm trong domain khác nhau — không so khớp được dù cùng 1 người. Sau khi deploy, chạy `UPDATE users SET face_embedding = NULL, has_face = 0` rồi enroll lại toàn bộ user.
+
+### 🐛 Fix liveness gate — rolling window thay liên tiếp
+
+**Vấn đề:** `LIVENESS_FRAMES=5` yêu cầu 5 frame liveness REAL **liên tiếp**. Trong môi trường thực tế (đèn nền dao động, góc mặt thay đổi nhẹ), IR liveness check fail rải rác 1 frame mỗi vài frame → counter liên tục bị reset về 0 → không bao giờ đạt 5, auth không bao giờ chạy tới bước match dù liveness tổng thể tốt (qua quan sát log: `REAL` chiếm > 90% frame nhưng counter mãi dao động 1↔2).
+
+**Giải pháp — đổi sang rolling window (`collections.deque`):**
+```python
+LIVENESS_WINDOW  = 7    # số frame gần nhất để xét
+LIVENESS_MIN_OK  = 2    # cần ít nhất 2/7 frame REAL trong window
+
+liveness_window = deque(maxlen=LIVENESS_WINDOW)
+...
+liveness_window.append(live_ok)
+ok_count = liveness_window.count(True)
+
+if self.mode == "auth" and ok_count < LIVENESS_MIN_OK:
+    continue   # chưa đủ tỉ lệ REAL trong window gần nhất, không reset toàn bộ
+```
+Một vài frame fail rải rác (ánh sáng nhiễu, chớp mắt) không còn xóa sạch tiến độ — chỉ cần tỉ lệ REAL đủ trong window trượt gần nhất. Bảo mật thực tế vẫn dựa vào `MATCH_THRESHOLD` + `CONFIRM_FRAMES` ở bước embedding, liveness chỉ là gate sơ bộ chống ảnh phẳng/màn hình.
+
+**UI hiển thị tiến độ rõ hơn:** `liveness_status` emit kèm tỉ lệ, ví dụ `✅ REAL (4/7)` thay vì chỉ `✅ REAL`.
+
+---
+
 ## [10/06/2026] — Migrate GUI Tkinter → PyQt6 · Fix face enroll/verify
 
 ### 🖥 Migrate toàn bộ Kiosk GUI từ Tkinter sang PyQt6

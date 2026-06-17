@@ -80,7 +80,7 @@ SML/
 ├── ai/
 │   ├── models.py                        ← Load dlib singleton (shape_pred, face_encoder)
 │   ├── face_utils.py                    ← MediaPipe detect, center_face
-│   └── ai_utils.py                      ← liveness(), landmarks(), embedding()
+│   └── ai_utils.py                      ← liveness(), landmarks(), embedding(), ir_to_bgr()
 │
 ├── public/                              ← Web frontend (giữ nguyên từ backup)
 │   ├── landing.html                     ← Entry point (3 portal)
@@ -159,21 +159,36 @@ BeginController (Idle)
 ```
 QThread FaceWorker.run()
     │
-    ├─ [mode=register] Bỏ qua liveness gate
-    │       camera.get() → center_face() → landmarks() → embedding()
+    camera.get() → (color, ir)
+    │
+    recog_frame = ir_to_bgr(ir)  ưu tiên IR · fallback color nếu IR chưa sẵn sàng
+    │
+    ├─ [mode=register]
+    │       center_face(recog_frame) → landmarks() → embedding()  (chạy trên IR)
+    │       liveness(ir) chỉ cần 1 frame REAL, không gate chặt
     │       Thu thập ENROLL_FRAMES=10 → np.mean() → register_done.emit()
     │
     └─ [mode=auth]
-            camera.get() → center_face()
+            center_face(recog_frame)
                 │
-                ├─ liveness(IR) — phải đạt LIVENESS_FRAMES=5 liên tiếp
+                ├─ liveness(ir) — rolling window LIVENESS_WINDOW=7 frame
+                │   cần ≥ LIVENESS_MIN_OK frame REAL trong window gần nhất
+                │   (thay cho yêu cầu liên tiếp cũ — chịu nhiễu môi trường tốt hơn)
                 │
-                ├─ landmarks() → embedding()
+                ├─ landmarks(recog_frame) → embedding(recog_frame, shape)
                 │
                 └─ So sánh L2 với known_embeddings
                    MATCH_THRESHOLD=0.45, CONFIRM_FRAMES=3
                    → auth_success.emit(mssv, name)
 ```
+
+**Lý do chuyển sang IR cho nhận diện (không chỉ liveness):**
+Ảnh màu (RGB) phụ thuộc ánh sáng môi trường — trong điều kiện thiếu sáng (Makerspace ban đêm, đèn không đều), embedding tính từ RGB kém ổn định, `best_dist` dao động lớn dẫn đến false reject. IR illuminator phát sáng riêng, không phụ thuộc ánh sáng phòng, nên ảnh IR đồng nhất hơn giữa lúc enroll và lúc verify.
+
+**`ir_to_bgr()` (`ai/ai_utils.py`):** convert IR grayscale (H, W) → BGR giả (H, W, 3) bằng `cv2.cvtColor(..., COLOR_GRAY2BGR)` — 3 channel giống nhau, đủ để dlib/MediaPipe hoạt động vì các model này chỉ cần cấu trúc hình học và độ tương phản, không cần màu thật.
+
+> **Lưu ý migration:** embedding train trên RGB (cũ) và embedding train trên IR (mới) không tương thích — nằm trong domain khác nhau dù cùng 1 người. Sau khi deploy bản IR, cần xóa `face_embedding` cũ trong DB (`UPDATE users SET face_embedding = NULL, has_face = 0`) và enroll lại toàn bộ user.
+
 
 ### Firebase Sync Architecture
 
@@ -390,7 +405,8 @@ IntelligentLocker.db
 |---|---|---|---|
 | `MATCH_THRESHOLD` | `face_worker.py` | `0.45` | Ngưỡng L2 distance embedding |
 | `CONFIRM_FRAMES` | `face_worker.py` | `3` | Số frame liên tiếp match mới xác nhận |
-| `LIVENESS_FRAMES` | `face_worker.py` | `5` | Số frame liveness OK trước khi match |
+| `LIVENESS_WINDOW` | `face_worker.py` | `7` | Số frame gần nhất để xét liveness (rolling window) |
+| `LIVENESS_MIN_OK` | `face_worker.py` | `2` | Số frame REAL tối thiểu trong window để pass (auth) |
 | `ENROLL_FRAMES` | `face_worker.py` | `10` | Số frame thu thập khi đăng ký mặt |
 | `MAX_FAILS` | `face_worker.py` | `5` | Số lần fail trước khi lockout |
 | `LOCKOUT_SECS` | `face_worker.py` | `60` | Thời gian lockout (giây) |
@@ -457,6 +473,7 @@ py -3.11 sync_tool.py --push    # Chỉ SQLite → Firebase
 | 04/06 | Fix đồng bộ `assigned_date`/`last_open`, heartbeat kiosk, bàn phím ảo 1024×600 |
 | 05/06 | Kiosk status realtime trên admin, OTP trả tủ server-side verify (SHA-256 hash) |
 | 10/06 | **Migrate GUI Tkinter → PyQt6** · FaceWorker QThread · multi-frame enroll (10 frames) · fix `select_mode` check has_locker · fix `save_embedding` return value |
+| 17/06 | **Chuyển nhận diện sang IR** (`ir_to_bgr()`) thay RGB · liveness rolling-window (7 frame, ≥2 REAL) thay liên tiếp · fix false-reject trong điều kiện thiếu sáng |
 
 > Chi tiết từng thay đổi xem tại [`CHANGELOG.md`](./CHANGELOG.md)
 
