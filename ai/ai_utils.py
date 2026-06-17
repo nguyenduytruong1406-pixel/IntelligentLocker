@@ -2,7 +2,12 @@
 ai/ai_utils.py — Face AI utilities: liveness check, landmarks, embedding
 
 Dùng:
-    from ai.ai_utils import liveness, landmarks, embedding, hash_password
+    from ai.ai_utils import liveness, landmarks, embedding, ir_to_bgr, hash_password
+
+Thay đổi so với phiên bản cũ:
+    - Thêm ir_to_bgr() để convert IR grayscale → BGR giả
+    - landmarks() và embedding() vẫn nhận BGR như cũ — không đổi signature
+    - face_worker.py sẽ truyền ir_to_bgr(ir) thay vì color khi IR available
 """
 
 import hashlib
@@ -12,6 +17,25 @@ import dlib
 
 from ai.models import shape_pred, face_encoder
 from ai.face_utils import center_face
+
+# ── IR → BGR helper ───────────────────────────────────────────────────────────
+
+def ir_to_bgr(ir_img: np.ndarray) -> np.ndarray:
+    """
+    Convert IR grayscale → BGR giả để feed vào dlib / MediaPipe.
+
+    dlib ResNet và BlazeFace đều expect 3-channel.
+    Duplicate channel: 3 channel giống nhau, model vẫn hoạt động bình thường
+    vì chỉ cần độ tương phản và cấu trúc hình học, không cần màu thật.
+
+    Args:
+        ir_img: grayscale numpy array (H, W) từ IR camera
+
+    Return:
+        BGR numpy array (H, W, 3)
+    """
+    return cv2.cvtColor(ir_img, cv2.COLOR_GRAY2BGR)
+
 
 # ── Liveness (IR Rule-based) ──────────────────────────────────────────────────
 
@@ -54,7 +78,7 @@ def liveness(ir_img: np.ndarray) -> tuple[bool, str]:
 
 def landmarks(img: np.ndarray):
     """
-    Detect 68 landmarks từ ảnh BGR.
+    Detect 68 landmarks từ ảnh BGR (color hoặc ir_to_bgr).
 
     Return:
         (shape, dlib.rectangle) nếu tìm thấy mặt
@@ -75,7 +99,7 @@ def landmarks(img: np.ndarray):
 
 def embedding(img: np.ndarray, shape) -> np.ndarray:
     """
-    Tính face embedding 128-D từ ảnh BGR và dlib shape.
+    Tính face embedding 128-D từ ảnh BGR (color hoặc ir_to_bgr) và dlib shape.
 
     Return: numpy array shape (128,)
     """

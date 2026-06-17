@@ -1,23 +1,36 @@
 """
 app/controllers/face_worker.py — AI pipeline chạy trong QThread riêng.
+
+Thay đổi so với phiên bản cũ:
+    - Dùng IR frame làm nguồn chính cho landmarks + embedding
+    - ir_to_bgr(ir) convert grayscale → BGR giả để feed vào dlib/MediaPipe
+    - Fallback về color nếu IR không available (tránh crash)
+    - frame_ready vẫn emit color frame để UI hiển thị preview màu tự nhiên
+      (người dùng thấy ảnh màu, nhưng AI chạy trên IR)
+
+LƯU Ý QUAN TRỌNG:
+    Sau khi deploy bản này, tất cả embedding cũ (train trên color) phải xóa
+    và enroll lại — IR embedding và color embedding không tương thích nhau.
 """
 
 import time
 import numpy as np
+from collections import deque
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from hardware.camera           import CameraBackend
-from ai.face_utils             import center_face
-from ai.ai_utils               import liveness, landmarks, embedding
+from hardware.camera              import CameraBackend
+from ai.face_utils                import center_face
+from ai.ai_utils                  import liveness, landmarks, embedding, ir_to_bgr
 from app.database.user_repository import UserRepository
 
-MATCH_THRESHOLD = 0.45
-CONFIRM_FRAMES  = 3
-LIVENESS_FRAMES = 5
-MAX_FAILS       = 5
-LOCKOUT_SECS    = 60
-ENROLL_FRAMES   = 10
+MATCH_THRESHOLD  = 0.45
+CONFIRM_FRAMES   = 3
+LIVENESS_WINDOW  = 7   # số frame gần nhất để xét liveness
+LIVENESS_MIN_OK  = 2    # cần ít nhất 4/7 frame REAL mới pass (auth)
+MAX_FAILS        = 5
+LOCKOUT_SECS     = 60
+ENROLL_FRAMES    = 10
 
 
 class FaceWorker(QThread):
@@ -59,11 +72,11 @@ class FaceWorker(QThread):
                 self._running = False
                 return
 
-        # Bật camera với IR (giữ nguyên như file cũ hoạt động tốt)
+        # Bật camera với IR
         self._camera.start(use_ir=True)
         time.sleep(0.5)
 
-        liveness_ok_count = 0
+        liveness_window   = deque(maxlen=LIVENESS_WINDOW)
         confirm_count     = 0
         last_match_mssv   = None
         fail_count        = 0
@@ -74,54 +87,70 @@ class FaceWorker(QThread):
             while self._running:
                 color, ir = self._camera.get()
 
-                if color is None:
+                # ── Chọn frame để nhận diện ───────────────────────────────────
+                # Ưu tiên IR (tốt hơn trong thiếu sáng).
+                # Fallback về color nếu IR chưa về (vd: khởi động chậm).
+                if ir is not None:
+                    recog_frame = ir_to_bgr(ir)   # grayscale → BGR giả
+                elif color is not None:
+                    recog_frame = color            # fallback
+                else:
                     time.sleep(0.033)
                     continue
 
-                self.frame_ready.emit(color.copy())
+                # ── UI preview: luôn dùng color nếu có, không thì dùng recog ──
+                preview_frame = color if color is not None else recog_frame
+                self.frame_ready.emit(preview_frame.copy())
 
-                box = center_face(color)
+                # ── Detect mặt trên recog_frame ───────────────────────────────
+                box = center_face(recog_frame)
                 self.face_detected.emit(box is not None)
 
                 if not box:
-                    liveness_ok_count = 0
-                    confirm_count     = 0
-                    last_match_mssv   = None
+                    liveness_window.clear()
+                    confirm_count   = 0
+                    last_match_mssv = None
                     time.sleep(0.033)
                     continue
 
-                # ── Liveness — luôn chạy để hiển thị status ───────────────
+                # ── Liveness — chạy trên IR gốc (grayscale), không phải BGR giả ──
                 live_ok, live_msg = liveness(ir) if ir is not None else (False, "Chờ IR...")
-                self.liveness_status.emit(live_ok, live_msg)
+                print(f"[LIVE] ok={live_ok}, msg={live_msg}")
+                liveness_window.append(live_ok)
 
-                if not live_ok:
-                    liveness_ok_count = 0
-                    confirm_count     = 0
-                    time.sleep(0.033)
-                    continue
+                ok_count = liveness_window.count(True)
 
-                liveness_ok_count += 1
+                # Emit trạng thái cho UI
+                if live_ok:
+                    self.liveness_status.emit(True, f"REAL ({ok_count}/{LIVENESS_WINDOW})")
+                else:
+                    self.liveness_status.emit(False, live_msg)
 
-                # ── Register: KHÔNG cần chờ LIVENESS_FRAMES, liveness OK 1 lần là đủ ──
-                # ── Auth: phải đủ LIVENESS_FRAMES frame liên tiếp ─────────────────────
-                if self.mode == "auth" and liveness_ok_count < LIVENESS_FRAMES:
-                    time.sleep(0.033)
-                    continue
+                # Auth: cần đủ LIVENESS_MIN_OK frame REAL trong window gần nhất
+                # Register: chỉ cần 1 frame REAL là đủ
+                if self.mode == "auth":
+                    if ok_count < LIVENESS_MIN_OK:
+                        time.sleep(0.033)
+                        continue
+                else:
+                    if not live_ok:
+                        time.sleep(0.033)
+                        continue
 
-                # ── Landmarks + Embedding ──────────────────────────────────
-                shape, det = landmarks(color)
+                # ── Landmarks + Embedding — chạy trên IR (qua ir_to_bgr) ──────
+                shape, det = landmarks(recog_frame)
                 if shape is None:
                     time.sleep(0.033)
                     continue
 
                 try:
-                    emb = embedding(color, shape)
+                    emb = embedding(recog_frame, shape)
                 except Exception as e:
                     print(f"[FaceWorker] embedding error: {e}")
                     time.sleep(0.033)
                     continue
 
-                # ── Mode: Đăng ký ─────────────────────────────────────────
+                # ── Mode: Đăng ký ─────────────────────────────────────────────
                 if self.mode == "register":
                     enroll_embeddings.append(emb)
                     self.enroll_progress.emit(len(enroll_embeddings), ENROLL_FRAMES)
@@ -129,7 +158,11 @@ class FaceWorker(QThread):
                         avg_emb = np.mean(enroll_embeddings, axis=0)
                         try:
                             from app.utils.session import Session
-                            self.face_log.emit(Session.current_user or "unknown", "FACE_REGISTER", f"frames={ENROLL_FRAMES}")
+                            self.face_log.emit(
+                                Session.current_user or "unknown",
+                                "FACE_REGISTER",
+                                f"frames={ENROLL_FRAMES},source={'IR' if ir is not None else 'COLOR'}"
+                            )
                         except Exception:
                             pass
                         self.register_done.emit(avg_emb)
@@ -137,7 +170,7 @@ class FaceWorker(QThread):
                     time.sleep(0.033)
                     continue
 
-                # ── Mode: Xác thực ─────────────────────────────────────────
+                # ── Mode: Xác thực ────────────────────────────────────────────
                 if not known:
                     self.auth_failed.emit("Chưa có dữ liệu khuôn mặt")
                     time.sleep(1)
@@ -153,6 +186,7 @@ class FaceWorker(QThread):
                         best_dist = dist
                         best_mssv = mssv
                         best_name = name
+                print(f"[MATCH] best_dist={best_dist:.4f}, mssv={best_mssv}, threshold={MATCH_THRESHOLD}")
 
                 if best_dist <= MATCH_THRESHOLD:
                     if best_mssv == last_match_mssv:
@@ -171,11 +205,16 @@ class FaceWorker(QThread):
                     last_match_mssv = None
                     fail_count += 1
                     mssv_log = best_mssv or (mssv_session or "unknown")
-                    self.face_log.emit(mssv_log, "FACE_FAIL", f"dist={best_dist:.3f} fail={fail_count}")
+                    self.face_log.emit(
+                        mssv_log, "FACE_FAIL",
+                        f"dist={best_dist:.3f} fail={fail_count}"
+                    )
                     if fail_count >= MAX_FAILS:
                         lockout_until = time.time() + LOCKOUT_SECS
-                        fail_count = 0
-                        self.auth_failed.emit(f"❌ Thử sai {MAX_FAILS} lần — khóa {LOCKOUT_SECS}s")
+                        fail_count    = 0
+                        self.auth_failed.emit(
+                            f"❌ Thử sai {MAX_FAILS} lần — khóa {LOCKOUT_SECS}s"
+                        )
                     else:
                         self.auth_failed.emit(
                             f"Không nhận ra khuôn mặt (còn {MAX_FAILS - fail_count} lần)"
