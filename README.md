@@ -227,6 +227,53 @@ Web client              Firebase              sync_listener.py
 
 > Client **không bao giờ đọc** `otp_tokens` — chỉ server biết hash.
 
+### Luồng đăng ký tài khoản mới (QR → Google Form → PDF ký tay → admin duyệt)
+
+**Thay đổi mô hình (từ 09/07/2026):** Sinh viên không còn tự đăng ký trực tiếp trên Kiosk/Web nữa. Quy trình mới:
+
+```
+Sinh viên quét QR tại Kiosk
+      │
+      ▼
+Điền Google Form (thông tin nhóm, MSSV, GVHD, kích thước tủ...)
+      │
+      ▼
+Google Apps Script (Trigger: On form submit)
+      │
+      ├─► Tạo file PDF "Đơn xin mượn tủ" từ template Google Docs
+      ├─► Gửi PDF qua email cho trưởng nhóm
+      └─► Đẩy dữ liệu lên Firebase /locker_requests/{mssv} (status: "pending")
+                (qua OAuth2 Service Account — Bearer token, không lộ quyền ghi)
+      │
+      ▼
+Sinh viên in PDF, xin đủ chữ ký (thành viên + GVHD)
+      │
+      ▼
+Nộp bản giấy cho quản lý Makerspace
+      │
+      ▼
+Admin vào Web Dashboard → tab "Đơn Đăng Ký" → tìm theo MSSV/tên
+      │
+      ▼
+Bấm "➕ Thêm tài khoản" (chỉ sau khi đã kiểm tra đơn giấy)
+      │
+      ├─► Ghi /users/{mssv} (is_approved:1, has_face:false)
+      └─► Đánh dấu /locker_requests/{mssv}.status = "approved" (giữ lại lịch sử)
+      │
+      ▼
+sync_listener.py (on_user_change — đã có sẵn, lắng nghe /users) bắt sự kiện
+      │
+      ├─► Đẩy user mới xuống SQLite kiosk ngay lập tức (realtime)
+      └─► Gửi mail "Tài khoản đã được duyệt" cho sinh viên
+      │
+      ▼
+Sinh viên ra Kiosk, nhập MSSV → has_face=false → tự động vào luồng enroll khuôn mặt
+```
+
+**Vì sao tách `locker_requests` khỏi `users`:** sinh viên vừa điền form chỉ nằm ở `locker_requests` với `status: "pending"` — không được tạo trong `/users`, nên **không thể thao tác gì ở Kiosk** cho tới khi admin xác nhận đã nhận đủ chữ ký và bấm duyệt thủ công. Điều này giữ nguyên tính chặt chẽ của hệ thống phần cứng: chỉ tài khoản đã qua duyệt giấy mới vào được `/users`.
+
+**Bảo mật ghi Firebase từ Apps Script:** Private Key của Service Account **không hardcode trong code** — được lưu trong Script Properties của Apps Script (`PropertiesService.getScriptProperties()`), chỉ đọc ra lúc runtime để tạo Access Token (Bearer) gọi REST API Firebase.
+
 ### Luồng điều hướng Web
 
 ```
@@ -247,11 +294,11 @@ landing.html
 |---|---|---|
 | `landing.html` | Entry point — điều hướng 3 portal | Không |
 | `login.html` | Đăng nhập admin | Không |
-| `index.html` | Dashboard admin (5 tab) | Bắt buộc |
-| `register.html` | Sinh viên tự đăng ký tài khoản | Không |
+| `index.html` | Dashboard admin (6 tab) | Bắt buộc |
+| `register.html` | *(Không còn dùng trong luồng chính)* — đăng ký đã chuyển sang Google Form + QR tại Kiosk | Không |
 | `user-dashboard.html` | Tra cứu tủ, idle warning, yêu cầu trả tủ | Không |
 
-### 5 Tab trong index.html
+### 6 Tab trong index.html
 
 | Tab | Nội dung |
 |---|---|
@@ -260,6 +307,7 @@ landing.html
 | 🗄 Tủ | Sơ đồ tủ realtime · gán/trả thủ công |
 | 🔄 Trả Tủ | Bảng yêu cầu trả tủ pending · xác nhận trả |
 | 📋 Lịch Sử | Log LOCKER_DELETE_LOG · search · export CSV |
+| 📝 Đơn Đăng Ký | Đơn từ Google Form (`locker_requests`) · tìm theo MSSV/tên · nút "➕ Thêm tài khoản" cấp tài khoản sau khi đã nhận đơn giấy ký tay |
 
 ---
 
@@ -315,6 +363,9 @@ LOCKER_DELETE_LOG (
 /logs/{push_id}                  → time, event, locker_id, mssv, name
 /locker_delete_logs/{push_id}    → mssv, locker_id, delete_time, reason
 /release_requests/{mssv}         → mssv, locker_id, requested_at, status
+/locker_requests/{mssv}          → mssv, name, email, khoa, size_requested,
+                                    requested_at, status ("pending"|"approved"), approved_at
+                                    (ghi bởi Google Apps Script qua OAuth2 Bearer token)
 /kiosk_status/last_seen          → ISO timestamp (heartbeat mỗi 30s)
 /kiosk_status/connected          → bool
 /otp_requests/{mssv}             → email, name, requested (web → kiosk)
@@ -323,7 +374,7 @@ LOCKER_DELETE_LOG (
 /verify_results/{mssv}           → ok, reason, ts (kiosk → web)
 ```
 
-### Security Rules (cập nhật 05/06/2026)
+### Security Rules (cập nhật 09/07/2026)
 
 ```json
 {
@@ -344,6 +395,10 @@ LOCKER_DELETE_LOG (
       ".read": "auth != null",
       "$mssv": { ".read": true, ".write": true }
     },
+    "locker_requests": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
     "otp_requests":  { "$mssv": { ".read": "auth != null", ".write": true } },
     "otp_tokens":    { "$mssv": { ".read": "auth != null", ".write": "auth != null" } },
     "verify_attempts":{ "$mssv": { ".read": "auth != null", ".write": true } },
@@ -351,6 +406,8 @@ LOCKER_DELETE_LOG (
   }
 }
 ```
+
+> Ghi chú: Google Apps Script ghi `locker_requests` bằng **Bearer token của Service Account** (Firebase Admin SDK qua OAuth2) — Admin SDK **luôn bỏ qua toàn bộ Security Rules** theo mặc định, nên dù rule yêu cầu `auth != null`, Apps Script vẫn ghi được bình thường. Rule `auth != null` ở đây chỉ áp dụng cho client Web thông thường (admin đã đăng nhập qua Firebase Auth mới đọc/duyệt được đơn).
 
 ### Sync Rules ưu tiên
 
@@ -447,6 +504,7 @@ py -3.11 sync_tool.py --push    # Chỉ SQLite → Firebase
 | Camera | winsdk (Windows Media Capture) | Truy cập IR stream Intel RealSense |
 | OTP Email | Gmail SMTP (primary) + EmailJS (fallback) | Không cần backend server |
 | Hardware | Waveshare 7" 1024×600 cảm ứng | Màn hình kiosk nhúng |
+| Đăng ký tài khoản | Google Forms + Google Apps Script (serverless) | Không cần backend riêng, tự xuất PDF + gửi mail + ghi Firebase qua Trigger "On form submit" |
 
 ---
 
@@ -474,6 +532,7 @@ py -3.11 sync_tool.py --push    # Chỉ SQLite → Firebase
 | 05/06 | Kiosk status realtime trên admin, OTP trả tủ server-side verify (SHA-256 hash) |
 | 10/06 | **Migrate GUI Tkinter → PyQt6** · FaceWorker QThread · multi-frame enroll (10 frames) · fix `select_mode` check has_locker · fix `save_embedding` return value |
 | 17/06 | **Chuyển nhận diện sang IR** (`ir_to_bgr()`) thay RGB · liveness rolling-window (7 frame, ≥2 REAL) thay liên tiếp · fix false-reject trong điều kiện thiếu sáng |
+| 09/07 | **Đổi mô hình đăng ký tài khoản**: QR tại Kiosk → Google Form → PDF xin chữ ký GVHD → admin duyệt thủ công · thêm node Firebase `locker_requests` · thêm tab Web "Đơn Đăng Ký" (tìm kiếm + cấp tài khoản) · Google Apps Script tự xuất PDF + gửi mail + ghi Firebase qua OAuth2 Service Account · fix rò rỉ private key (chuyển sang Script Properties) |
 
 > Chi tiết từng thay đổi xem tại [`CHANGELOG.md`](./CHANGELOG.md)
 

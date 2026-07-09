@@ -145,6 +145,7 @@ h2{font-size:1.2rem}
 <li class="nav-item" id="nav-logs" onclick="switchTab('tab-logs',this)"><span class="nav-icon ms">receipt_long</span><span class="nav-text">Nhật Ký</span><span class="badge" id="log-badge">0</span></li>
 <li class="nav-item" id="nav-delete-log" onclick="switchTab('tab-delete-log',this)"><span class="nav-icon ms">delete_history</span><span class="nav-text">Lịch Sử Tủ</span></li>
 <li class="nav-item" id="nav-release" onclick="switchTab('tab-release',this)"><span class="nav-icon ms">logout</span><span class="nav-text">Trả Tủ</span><span class="badge" id="release-badge" style="display:none">0</span></li>
+<li class="nav-item" id="nav-locker-requests" onclick="switchTab('tab-locker-requests',this)"><span class="nav-icon ms">assignment_ind</span><span class="nav-text">Đơn Đăng Ký</span><span class="badge" id="locker-requests-badge" style="display:none">0</span></li>
 </ul>
 </div>
 <div class="sidebar-bottom">
@@ -232,6 +233,21 @@ h2{font-size:1.2rem}
         <table>
             <thead><tr><th>MSSV</th><th>Tủ</th><th>Thời Gian Gửi</th><th>Trạng Thái</th><th>Xử Lý</th></tr></thead>
             <tbody id="release-list"><tr><td colspan="5" style="text-align:center;color:var(--text4);padding:20px">Đang tải...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+<div id="tab-locker-requests" class="tab-content">
+    <div class="section-header">
+        <h3>Đơn Đăng Ký Chờ Cấp Tài Khoản</h3>
+    </div>
+    <div class="search-box" style="margin-top:12px">
+        <span class="ms">search</span>
+        <input type="text" id="locker-req-search" placeholder="Tìm theo MSSV hoặc tên..." oninput="filterLockerRequests()">
+    </div>
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>MSSV</th><th>Họ Tên</th><th>Email</th><th>Kích Thước Tủ</th><th>Ngày Đăng Ký</th><th>Trạng Thái</th><th>Thao Tác</th></tr></thead>
+            <tbody id="locker-req-list"><tr><td colspan="7" style="text-align:center;color:var(--text4);padding:20px">Đang tải...</td></tr></tbody>
         </table>
     </div>
 </div>
@@ -464,6 +480,7 @@ const _reasonMap={
   'auto_expired_pending':'⏳ Hết hạn chờ duyệt (tự động)'
 };
 let _allDeleteLogs=[];
+let _allLockerRequests=[];
 
 function startDataListeners(){
 
@@ -971,6 +988,17 @@ onValue(ref(db,'release_requests'),(snapshot)=>{
       <td>${r.status==='pending'?`<button onclick="handleRelease('${r.mssv}','${r.locker_id}')" style="padding:5px 12px;background:var(--error);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:600">Xác nhận trả</button>`:'—'}</td>
     </tr>`).join('');
 });
+
+// Đơn đăng ký (locker_requests) — chờ admin cấp tài khoản
+onValue(ref(db,'locker_requests'),(snapshot)=>{
+  const data=snapshot.val()||{};
+  _allLockerRequests=Object.keys(data).map(mssv=>({mssv,...data[mssv]}));
+  const pendingCount=_allLockerRequests.filter(r=>r.status==='pending').length;
+  const badge=document.getElementById('locker-requests-badge');
+  if(pendingCount>0){badge.textContent=pendingCount>99?'99+':pendingCount;badge.style.display='';}
+  else{badge.style.display='none';}
+  _renderLockerRequests(_allLockerRequests);
+});
 };
 
 function _renderDeleteLogs(logs){
@@ -1003,6 +1031,65 @@ window.exportDeleteLogs=function(){
     _reasonMap[l.reason]||l.reason||''
   ]);
   downloadCSV(`locker_delete_log_${new Date().toISOString().slice(0,10)}.csv`,rows,headers);
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── LOCKER REQUESTS (đơn đăng ký từ Google Form) ───────────────────────────────
+function _renderLockerRequests(list){
+  const tbody=document.getElementById('locker-req-list');
+  if(!tbody)return;
+  if(!list||list.length===0){
+    tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text4);padding:20px">Chưa có đơn đăng ký nào</td></tr>';
+    return;
+  }
+  const sorted=[...list].sort((a,b)=>(b.requested_at||'').localeCompare(a.requested_at||''));
+  tbody.innerHTML=sorted.map(r=>{
+    const isPending=r.status==='pending';
+    let dateStr='—';
+    try{ dateStr=r.requested_at?new Date(r.requested_at).toLocaleString('vi-VN'):'—'; }catch(e){}
+    return `<tr style="${isPending?'background:rgba(255,193,7,.08)':''}">
+      <td><strong>${r.mssv||'—'}</strong></td>
+      <td>${r.name||'—'}</td>
+      <td>${r.email||'—'}</td>
+      <td>${r.size_requested||'—'}</td>
+      <td>${dateStr}</td>
+      <td><span style="color:${isPending?'var(--warning)':'var(--success)'};font-weight:600">${isPending?'⏳ Chờ duyệt':'✅ Đã cấp'}</span></td>
+      <td>${isPending?`<button class="btn btn-approve btn-sm" onclick="approveLockerRequest('${r.mssv}')">➕ Thêm tài khoản</button>`:'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+window.filterLockerRequests=function(){
+  const val=document.getElementById('locker-req-search').value.trim().toLowerCase();
+  if(!val){_renderLockerRequests(_allLockerRequests);return;}
+  _renderLockerRequests(_allLockerRequests.filter(r=>
+    (r.mssv||'').toLowerCase().includes(val)||(r.name||'').toLowerCase().includes(val)
+  ));
+};
+
+window.approveLockerRequest=async function(mssv){
+  const req=_allLockerRequests.find(r=>r.mssv===mssv);
+  if(!req){showToast('❌ Không tìm thấy đơn đăng ký');return;}
+  if(!confirm(`Xác nhận cấp tài khoản cho ${req.name||mssv} (${mssv})?
+Chỉ thực hiện khi đã nhận đơn giấy có đủ chữ ký GVHD.`))return;
+  try{
+    await update(ref(db,`users/${mssv}`),{
+      mssv,
+      name:req.name||'',
+      email:req.email||'',
+      is_approved:1,
+      has_face:false,
+      role:'student',
+      registered_at:new Date().toLocaleString('sv-SE').slice(0,19)
+    });
+    await update(ref(db,`locker_requests/${mssv}`),{
+      status:'approved',
+      approved_at:new Date().toISOString()
+    });
+    showToast(`✅ Đã cấp tài khoản cho ${req.name||mssv}`);
+  }catch(e){
+    showToast('❌ Lỗi: '+e.message);
+  }
 };
 // ─────────────────────────────────────────────────────────────────────────────
 

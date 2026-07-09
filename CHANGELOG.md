@@ -4,6 +4,88 @@ Toàn bộ lịch sử thay đổi theo ngày, mới nhất ở trên.
 
 ---
 
+## [09/07/2026] — Đổi mô hình đăng ký: QR → Google Form → PDF ký tay → Admin duyệt
+
+### 🔄 Đổi luồng đăng ký tài khoản
+
+**Vấn đề:** Mô hình cũ (sinh viên tự đăng ký qua `register.html` hoặc kiosk) không có bước xác nhận giấy tờ — GVHD yêu cầu chuyển sang quy trình có chữ ký xác nhận trước khi cấp tài khoản.
+
+**Luồng mới:**
+```
+Sinh viên quét QR tại Kiosk → điền Google Form → nhận PDF qua email
+→ in, xin chữ ký (thành viên + GVHD) → nộp bản giấy cho quản lý
+→ Admin tra cứu trên Web (tab "Đơn Đăng Ký") → xác nhận đơn giấy → bấm "Thêm tài khoản"
+→ Tài khoản được tạo trong /users → sync_listener.py đẩy xuống SQLite kiosk ngay
+→ Sinh viên ra kiosk đăng ký khuôn mặt
+```
+
+Trong lúc chờ duyệt, sinh viên **chỉ tồn tại trong `/locker_requests`** (`status: "pending"`) — chưa có trong `/users` nên không thể thao tác gì tại Kiosk. Tách biệt 2 node này giữ nguyên tính chặt chẽ của hệ thống phần cứng.
+
+### 📄 Google Apps Script — tự động tạo PDF + gửi mail + ghi Firebase
+
+**Trigger:** `onFormSubmitAndSendEmail(e)` — chạy khi có submit mới trên Google Form (`Trigger - On form submit`).
+
+**Xử lý:**
+1. Đọc toàn bộ câu trả lời form (`e.response.getItemResponses()`), map vào object `data` theo tên câu hỏi (khoa, đề tài, GVHD, kích thước tủ, ngày mượn/trả, thông tin tối đa 3 thành viên)
+2. Copy file Google Docs template (`TEMPLATE_DOC_ID`) vào thư mục đích (`TARGET_FOLDER_ID`), thay các placeholder dạng `{{key}}` bằng dữ liệu thật (kể cả điền tự động số thứ tự `{{01}}/{{02}}/{{03}}` nếu có thành viên)
+3. Xuất file Docs vừa điền thành PDF (`tempFile.getAs(MimeType.PDF)`)
+4. Gửi PDF qua email cho trưởng nhóm (`MailApp.sendEmail`), kèm hướng dẫn in — ký — nộp cho Ban quản lý
+5. Dọn file Docs nháp (`tempFile.setTrashed(true)`), chỉ giữ email + PDF đã gửi
+6. Đẩy dữ liệu lên Firebase `/locker_requests/{mssv}` với `status: "pending"`
+
+### 🔐 Ghi Firebase bằng OAuth2 Service Account (Admin SDK)
+
+**Vấn đề cũ (nếu dùng REST API thường):** phải mở `.write: true` lỏng lẻo trên node hoặc lộ API key trên URL.
+
+**Giải pháp:** dùng thư viện `OAuth2` cho Apps Script, tạo Access Token (Bearer) từ Service Account key theo chuẩn JWT:
+```javascript
+function getFirebaseService() {
+  return OAuth2.createService('Firebase')
+      .setTokenUrl('https://oauth2.googleapis.com/token')
+      .setPrivateKey(privateKey)
+      .setIssuer(clientEmail)
+      .setPropertyStore(PropertiesService.getScriptProperties())
+      .setScope('https://www.googleapis.com/auth/firebase.database ...');
+}
+```
+Token được gắn vào header `Authorization: Bearer ...` khi gọi REST API Firebase (`PUT /locker_requests/{mssv}.json`) — không lộ quyền ghi trên URL.
+
+**Fix bảo mật quan trọng:** ban đầu private key bị hardcode trực tiếp trong code `.gs` — đã chuyển sang lưu trong **Script Properties** (`PropertiesService.getScriptProperties()`), đồng thời **thu hồi (revoke) key cũ đã lộ và tạo key mới** trên Google Cloud Console. Code đọc key runtime thay vì hardcode:
+```javascript
+var props = PropertiesService.getScriptProperties();
+var clientEmail = props.getProperty('FIREBASE_CLIENT_EMAIL');
+var privateKey  = props.getProperty('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n');
+```
+Lỗi `Invalid argument: key` gặp phải trong lúc setup do định dạng `\n` trong private key bị escape sai khi dán vào Script Properties — fix bằng `.replace(/\\n/g, '\n')` để đảm bảo ký tự xuống dòng đúng chuẩn PEM.
+
+### 🌐 Web Admin — Tab mới "Đơn Đăng Ký" (`index.html`)
+
+- Bảng hiển thị: MSSV, Họ tên, Email, Kích thước tủ, Ngày đăng ký, Trạng thái — **ẩn trường `khoa` khỏi UI** (vẫn lưu trong Firebase để tra cứu sau nếu cần, không hiển thị dư thừa)
+- Ô tìm kiếm theo MSSV hoặc tên (lọc client-side trên dữ liệu cache `_allLockerRequests`)
+- Badge đỏ trên sidebar đếm số đơn `status: "pending"`, realtime qua `onValue(ref(db,'locker_requests'))`
+- Nút **"➕ Thêm tài khoản"** cho từng đơn `pending` → `approveLockerRequest(mssv)`:
+  - `update(ref(db, users/{mssv}), {...})` — tạo tài khoản với `is_approved:1`, `has_face:false`, `role:'student'`
+  - `update(ref(db, locker_requests/{mssv}), {status:'approved', approved_at:...})` — giữ lại lịch sử, không xóa node
+  - Có `confirm()` nhắc admin chỉ bấm sau khi đã kiểm tra đơn giấy có đủ chữ ký
+
+### 🔥 Firebase — node mới `/locker_requests/{mssv}`
+
+```
+/locker_requests/{mssv} → mssv, name, email, khoa, size_requested,
+                           requested_at, status ("pending"|"approved"), approved_at
+```
+Thêm rule: `"locker_requests": { ".read": "auth != null", "$mssv": { ".write": true } }` — Apps Script ghi bằng Bearer token của Admin SDK nên không bị chặn bởi rule client thường.
+
+### ✅ Không cần sửa `sync_listener.py`
+
+`on_user_change` (lắng nghe `/users`) đã có sẵn từ trước và tự động:
+- Đẩy user mới xuống SQLite kiosk ngay khi admin duyệt (realtime, không cần chờ `sync_tool.py`)
+- Gửi mail "Tài khoản đã được phê duyệt" khi `is_approved` chuyển 0 → 1 (`send_approval_email()`)
+
+Vì vậy toàn bộ luồng mới hoạt động ngay mà không cần thay đổi gì ở tầng kiosk.
+
+---
+
 ## [17/06/2026] — Chuyển face recognition sang IR · Fix liveness rolling-window
 
 ### 🌓 Nhận diện khuôn mặt: RGB → IR
