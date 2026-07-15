@@ -1,5 +1,4 @@
 from PyQt6.QtWidgets import QMainWindow
-from app.paths import UI, GIF, QSS, find_video
 from PyQt6 import uic
 from PyQt6.QtGui import QMovie
 from PyQt6.QtCore import QSize
@@ -11,12 +10,14 @@ class LoadingController(QMainWindow):
 
         super().__init__()
 
-        uic.loadUi(UI("LOADING.ui"),
+        uic.loadUi(
+            "app/ui/LOADING.ui",
             self
         )
 
-        self.movie = QMovie(GIF("loading.gif")
-        )
+        from pathlib import Path
+        BASE_DIR = Path(__file__).parent.parent  # trỏ về thư mục SML/app
+        self.movie = QMovie(str(BASE_DIR / "assets/gif/loading.gif"))
 
         self.movie.setScaledSize(
             QSize(180, 180)

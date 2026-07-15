@@ -90,6 +90,8 @@ class LockerRepository:
                     "UPDATE Users SET last_active_time = ? WHERE mssv = ?",
                     (now, mssv)
                 )
+                # Ghi LOCKER_DELETE_LOG (dùng chung bảng audit "Lịch Sử Tủ")
+                self._log_delete(conn, mssv, locker_id, now, "new_assignment")
                 conn.commit()
                 # TODO (Bước B): push Firebase
                 return True
@@ -116,7 +118,7 @@ class LockerRepository:
 
     # ── Trả tủ ────────────────────────────────────────────────────────────────
 
-    def return_locker(self, mssv, locker_id, name):
+    def return_locker(self, mssv, locker_id, name, reason="student_release"):
         """Trả tủ: reset Lockers + ghi log + ghi LOCKER_DELETE_LOG."""
         try:
             with self.db.connect() as conn:
@@ -138,7 +140,7 @@ class LockerRepository:
                     (now, mssv)
                 )
                 # Ghi LOCKER_DELETE_LOG (IntelligentLocker standard)
-                self._log_delete(conn, mssv, locker_id, now, "student_release")
+                self._log_delete(conn, mssv, locker_id, now, reason)
                 conn.commit()
                 # TODO (Bước B): push Firebase release
                 return True
@@ -192,3 +194,25 @@ class LockerRepository:
         except Exception as e:
             print(f"[locker_repo] update_locker_maintenance error: {e}")
             return False
+
+    # ── Thu hồi tủ idle (không mở trong X ngày) ──────────────────────────────────
+
+    def get_idle_lockers(self, idle_days: int):
+        """Tủ đang occupied nhưng không mở (last_open) quá idle_days ngày.
+        Trả về list (locker_id, current_mssv)."""
+        with self.db.connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT locker_id, current_mssv
+                FROM Lockers
+                WHERE status = 'occupied'
+                  AND current_mssv IS NOT NULL
+                  AND current_mssv != ''
+                  AND last_open IS NOT NULL
+                  AND last_open != ''
+                  AND datetime(last_open) < datetime('now', 'localtime', ?)
+                """,
+                (f"-{idle_days} days",)
+            )
+            return cursor.fetchall()

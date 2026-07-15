@@ -13,6 +13,7 @@ Chỉ thay đổi: dùng app/firebase_config.py + app/database/database.py của
 
 import sys
 from pathlib import Path
+from datetime import datetime
 
 # ── 1. Firebase — dùng chung firebase_config của SML ─────────────────────────
 from app.firebase_config import FIREBASE_OK
@@ -30,13 +31,19 @@ con  = _db.connect()
 cur  = con.cursor()
 
 
+def _now_iso() -> str:
+    """Timestamp dạng 'YYYY-MM-DD HH:MM:SS' — sortable, khớp định dạng
+    assigned_date/delete_time đã chuẩn hoá bên web (index.html)."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  HELPERS — đọc dữ liệu
 # ══════════════════════════════════════════════════════════════════════════════
 
 def get_sqlite_users() -> dict:
     cur.execute(
-        "SELECT mssv, name, is_approved, has_face, role, face_embedding, email, password "
+        "SELECT mssv, name, has_face, role, face_embedding, email, password, is_first_login "
         "FROM Users"
     )
     return {r["mssv"]: dict(r) for r in cur.fetchall()}
@@ -59,7 +66,14 @@ def get_delete_logs() -> tuple[set, dict]:
     Đọc locker_delete_logs từ Firebase.
     Return:
       admin_deleted_mssv : set MSSV bị admin xóa hoàn toàn
-      released_lockers   : {mssv: set(locker_id)} đã trả tủ từ web/kiosk
+      released_lockers   : {mssv: {locker_id: delete_time_gần_nhất}} — lần trả
+                            tủ GẦN NHẤT của mỗi cặp (mssv, locker_id). Dùng để
+                            so sánh với assigned_date hiện tại trong push():
+                            nếu locker đã được GÁN LẠI hợp lệ sau lần trả này
+                            (assigned_date mới hơn delete_time) thì KHÔNG được
+                            coi là "còn sót lại chưa dọn" nữa — tránh xóa nhầm
+                            lần gán mới chỉ vì trùng (mssv, locker_id) với 1
+                            log trả tủ cũ (log không bao giờ bị xóa/hết hạn).
     """
     snap = fdb.reference("locker_delete_logs").get() or {}
     admin_deleted_mssv: set  = set()
@@ -69,11 +83,15 @@ def get_delete_logs() -> tuple[set, dict]:
         reason = entry.get("reason", "")
         mssv   = entry.get("mssv", "")
         lid    = entry.get("locker_id", "")
+        dtime  = entry.get("delete_time", "") or ""
 
         if reason == "admin_delete_card" and mssv:
             admin_deleted_mssv.add(mssv)
         elif reason == "student_release" and mssv and lid and lid != "—":
-            released_lockers.setdefault(mssv, set()).add(lid)
+            bucket = released_lockers.setdefault(mssv, {})
+            # Giữ lần trả GẦN NHẤT nếu có nhiều lần trả cùng cặp (mssv, locker_id)
+            if lid not in bucket or dtime > bucket[lid]:
+                bucket[lid] = dtime
 
     return admin_deleted_mssv, released_lockers
 
@@ -90,45 +108,49 @@ def pull(sqlite_users: dict, firebase_users: dict, dry_run: bool = False):
     # Firebase → SQLite: thêm / cập nhật
     for mssv, fb in firebase_users.items():
         name        = fb.get("name", "Unknown")
-        is_approved = int(fb.get("is_approved", 0))
         role        = fb.get("role", "student")
         fb_has_face = 1 if fb.get("has_face") else 0
         email       = fb.get("email", "")
         password_fb = fb.get("password")
+        # None nếu Firebase chưa có field này — giữ nguyên giá trị SQLite
+        fb_first_login = fb.get("is_first_login")
 
         if mssv in sqlite_users:
             sq          = sqlite_users[mssv]
             sq_email    = sq.get("email") or ""
             sq_password = sq.get("password")
+            sq_first_login = 1 if sq.get("is_first_login") is None else int(sq.get("is_first_login"))
 
             merged_has_face = max(int(sq["has_face"] or 0), fb_has_face)
             final_password  = password_fb if password_fb else sq_password
+            final_first_login = int(bool(fb_first_login)) if fb_first_login is not None else sq_first_login
 
             changed = (
                 sq["name"] != name
-                or int(sq["is_approved"] or 0) != is_approved
                 or (sq["role"] or "student") != role
                 or int(sq["has_face"] or 0) != merged_has_face
                 or sq_email != email
                 or sq_password != final_password
+                or sq_first_login != final_first_login
             )
             if changed:
                 print(f"  [UPDATE] {name} ({mssv})")
                 if not dry_run:
                     cur.execute(
-                        "UPDATE Users SET name=?, is_approved=?, role=?, has_face=?, "
-                        "email=?, password=? WHERE mssv=?",
-                        (name, is_approved, role, merged_has_face, email, final_password, mssv),
+                        "UPDATE Users SET name=?, role=?, has_face=?, "
+                        "email=?, password=?, is_first_login=? WHERE mssv=?",
+                        (name, role, merged_has_face, email, final_password, final_first_login, mssv),
                     )
                 updated += 1
         else:
+            new_first_login = int(bool(fb_first_login)) if fb_first_login is not None else 1
             print(f"  [ADD→SQLite] {name} ({mssv})")
             if not dry_run:
                 cur.execute(
                     "INSERT OR IGNORE INTO Users "
-                    "(mssv, name, is_approved, role, has_face, email, password) "
+                    "(mssv, name, role, has_face, email, password, is_first_login) "
                     "VALUES (?,?,?,?,?,?,?)",
-                    (mssv, name, is_approved, role, fb_has_face, email, password_fb),
+                    (mssv, name, role, fb_has_face, email, password_fb, new_first_login),
                 )
             added += 1
 
@@ -138,7 +160,8 @@ def pull(sqlite_users: dict, firebase_users: dict, dry_run: bool = False):
         print(f"  [DELETE←Cloud] {sq['name']} ({mssv})")
         if not dry_run:
             cur.execute(
-                "UPDATE Lockers SET status='empty', current_mssv=NULL WHERE current_mssv=?",
+                """UPDATE Lockers SET status='empty', current_mssv=NULL,
+                   assigned_date=NULL, last_open=NULL WHERE current_mssv=?""",
                 (mssv,),
             )
             cur.execute("DELETE FROM Users WHERE mssv=?", (mssv,))
@@ -164,6 +187,7 @@ def push(sqlite_users: dict, firebase_users: dict, sqlite_lockers: dict, dry_run
     for mssv, sq in sqlite_users.items():
         has_face    = bool(sq["face_embedding"] is not None and len(sq["face_embedding"] or b"") > 0)
         sq_password = sq.get("password")
+        sq_first_login = 1 if sq.get("is_first_login") is None else int(sq.get("is_first_login"))
 
         if mssv not in firebase_users:
             # Chặn: user đã bị admin xóa từ web
@@ -171,7 +195,8 @@ def push(sqlite_users: dict, firebase_users: dict, sqlite_lockers: dict, dry_run
                 print(f"  [SKIP+DELETE] {sq['name']} ({mssv}) — admin đã xóa từ web")
                 if not dry_run:
                     cur.execute(
-                        "UPDATE Lockers SET status='empty', current_mssv=NULL WHERE current_mssv=?",
+                        """UPDATE Lockers SET status='empty', current_mssv=NULL,
+                           assigned_date=NULL, last_open=NULL WHERE current_mssv=?""",
                         (mssv,),
                     )
                     cur.execute("DELETE FROM Users WHERE mssv=?", (mssv,))
@@ -181,12 +206,12 @@ def push(sqlite_users: dict, firebase_users: dict, sqlite_lockers: dict, dry_run
             print(f"  [ADD→Firebase] {sq['name']} ({mssv})")
             if not dry_run:
                 data = {
-                    "mssv"       : mssv,
-                    "name"       : sq["name"],
-                    "is_approved": int(sq["is_approved"] or 0),
-                    "role"       : sq["role"] or "student",
-                    "has_face"   : has_face,
-                    "email"      : sq.get("email") or "",
+                    "mssv"          : mssv,
+                    "name"          : sq["name"],
+                    "role"          : sq["role"] or "student",
+                    "has_face"      : has_face,
+                    "email"         : sq.get("email") or "",
+                    "is_first_login": bool(sq_first_login),
                 }
                 if sq_password:
                     data["password"] = sq_password
@@ -202,13 +227,15 @@ def push(sqlite_users: dict, firebase_users: dict, sqlite_lockers: dict, dry_run
                 updates["email"] = sq_email
             if sq_password and sq_password != fb.get("password"):
                 updates["password"] = sq_password
-            # Sync thêm is_approved và account_status
-            sq_approved = int(sq.get("is_approved") or 0)
-            if sq_approved != int(fb.get("is_approved") or 0):
-                updates["is_approved"] = sq_approved
+            # Sync thêm account_status (is_approved đã bỏ — không còn dùng)
             sq_status = sq.get("account_status") or "ACTIVE"
             if sq_status != (fb.get("account_status") or "ACTIVE"):
                 updates["account_status"] = sq_status
+            # is_first_login: kiosk là nguồn xác thực (đổi khi sinh viên đổi
+            # mật khẩu lần đầu) → luôn đẩy lên Firebase nếu khác/chưa có
+            fb_first_login = fb.get("is_first_login")
+            if fb_first_login is None or bool(fb_first_login) != bool(sq_first_login):
+                updates["is_first_login"] = bool(sq_first_login)
 
             if updates:
                 print(f"  [UPDATE→Firebase] {sq['name']} ({mssv}) — {list(updates.keys())}")
@@ -218,15 +245,23 @@ def push(sqlite_users: dict, firebase_users: dict, sqlite_lockers: dict, dry_run
 
     # ── Push lockers ──────────────────────────────────────────────────────────
     for lid, lk in sqlite_lockers.items():
-        mssv_local   = lk.get("current_mssv") or ""
-        status_local = (lk.get("status") or "empty").lower()
+        mssv_local     = lk.get("current_mssv") or ""
+        status_local   = (lk.get("status") or "empty").lower()
+        assigned_local = lk.get("assigned_date") or ""
 
-        # Chặn: tủ đã trả từ web/kiosk, không push lại trạng thái cũ
-        if (
+        release_time = released_lockers.get(mssv_local, {}).get(lid)
+        # Chỉ coi là "còn sót lại chưa dọn" nếu KHÔNG có assigned_date (chưa
+        # từng ghi nhận gán) HOẶC assigned_date CŨ HƠN/BẰNG lần trả tủ đó —
+        # nếu assigned_date MỚI HƠN, nghĩa là tủ đã được gán lại hợp lệ sau
+        # khi trả, không được đụng vào.
+        is_stale_release = (
             status_local == "occupied"
             and mssv_local
-            and lid in released_lockers.get(mssv_local, set())
-        ):
+            and release_time is not None
+            and (not assigned_local or assigned_local <= release_time)
+        )
+
+        if is_stale_release:
             print(f"  [FIX LOCKER] {lid} ({mssv_local}) — đã trả từ web, dọn SQLite → push empty")
             if not dry_run:
                 cur.execute(
@@ -241,6 +276,13 @@ def push(sqlite_users: dict, firebase_users: dict, sqlite_lockers: dict, dry_run
                     "current_mssv" : "",
                     "assigned_date": "",
                     "last_open"    : "",
+                })
+                # Ghi log audit — trước đây bước dọn này không để lại dấu vết gì
+                fdb.reference("locker_delete_logs").push({
+                    "mssv"       : mssv_local,
+                    "locker_id"  : lid,
+                    "delete_time": _now_iso(),
+                    "reason"     : "sync_auto_fix",
                 })
             pushed_lockers += 1
             continue
@@ -259,34 +301,60 @@ def push(sqlite_users: dict, firebase_users: dict, sqlite_lockers: dict, dry_run
     return pushed_users, pushed_lockers
 
 
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  PULL last_open từ Firebase lockers → SQLite
 # ══════════════════════════════════════════════════════════════════════════════
 
-def pull_locker_last_open(dry_run: bool = False):
-    """Merge last_open từ Firebase xuống SQLite — lấy giá trị mới hơn."""
+def pull_lockers(dry_run: bool = False):
+    """
+    Pull Firebase → SQLite cho Lockers: status / current_mssv / assigned_date /
+    last_open. Firebase là nguồn xác thực khi web vừa gán tủ trong lúc kiosk
+    tắt — nếu không pull bước này trước khi push(), push() sẽ lấy SQLite (còn
+    "trống" cũ) đè lên Firebase và XÓA MẤT assignment vừa gán trên web.
+    """
     fb_lockers = fdb.reference("lockers").get() or {}
     updated = 0
     for lid, fb in fb_lockers.items():
-        fb_last_open = fb.get("last_open") or ""
-        if not fb_last_open:
-            continue
         row = con.execute(
-            "SELECT last_open FROM Lockers WHERE locker_id=?", (lid,)
+            "SELECT status, current_mssv, assigned_date, last_open FROM Lockers WHERE locker_id=?",
+            (lid,),
         ).fetchone()
-        if not row:
-            continue
+        if row is None:
+            continue  # tủ không tồn tại trong SQLite — không tự tạo mới ở đây
+
+        fb_status   = (fb.get("status") or "empty").lower()
+        fb_mssv     = fb.get("current_mssv") or None
+        fb_assigned = fb.get("assigned_date") or None
+        fb_last_open = fb.get("last_open") or ""
+
+        sq_status   = (row["status"] or "empty").lower()
+        sq_mssv     = row["current_mssv"]
+        sq_assigned = row["assigned_date"]
         sq_last_open = row["last_open"] or ""
-        final = max(sq_last_open, fb_last_open) if sq_last_open else fb_last_open
-        if final != sq_last_open:
+
+        # last_open: lấy giá trị mới hơn (string so sánh được vì cùng format datetime)
+        final_last_open = max(sq_last_open, fb_last_open) if sq_last_open else fb_last_open
+
+        changed = (
+            sq_status != fb_status
+            or (sq_mssv or None) != fb_mssv
+            or (sq_assigned or None) != fb_assigned
+            or sq_last_open != final_last_open
+        )
+        if changed:
+            print(f"  [LOCKER PULL] {lid}: {sq_status}/{sq_mssv} → {fb_status}/{fb_mssv}")
             if not dry_run:
                 cur.execute(
-                    "UPDATE Lockers SET last_open=? WHERE locker_id=?", (final, lid)
+                    "UPDATE Lockers SET status=?, current_mssv=?, assigned_date=?, last_open=? "
+                    "WHERE locker_id=?",
+                    (fb_status, fb_mssv, fb_assigned, final_last_open, lid),
                 )
             updated += 1
+
     if not dry_run:
         con.commit()
-    print(f"  PULL last_open lockers: ~{updated} cập nhật")
+    print(f"  PULL lockers: ~{updated} cập nhật")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -307,7 +375,7 @@ def main():
     if mode in ("--pull", "--sync"):
         print("── PULL Firebase → SQLite ──────────────────────────────")
         pull(sqlite_users, firebase_users)
-        pull_locker_last_open()
+        pull_lockers()
 
     if mode in ("--push", "--sync"):
         print("\n── PUSH SQLite → Firebase ──────────────────────────────")

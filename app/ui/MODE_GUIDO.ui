@@ -44,18 +44,7 @@
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">QPushButton {
-    background-color: transparent;
-    color: #2ecc71;             /* Màu xanh lá */
-    border: 2px solid #2ecc71;   /* Đường viền mảnh */
-    border-radius: 10px;
-    font-weight: bold;
-}
-
-QPushButton:hover {
-    background-color: #2ecc71;  /* Đổ màu nền khi di chuột */
-    color: white;
-}</string>
+     <string notr="true"/>
     </property>
     <property name="text">
      <string>GỬI ĐỒ</string>

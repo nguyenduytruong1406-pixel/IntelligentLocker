@@ -30,8 +30,10 @@ def _now() -> str:
 def push_borrow(mssv: str, locker_id: str, name: str, assigned_date: str = ""):
     """
     Cập nhật Firebase sau khi sinh viên được gán tủ:
-      /lockers/{id} → status=occupied, current_mssv, assigned_date, last_open
-      /logs         → push ASSIGN_LOCKER
+      /lockers/{id}       → status=occupied, current_mssv, assigned_date, last_open
+      /locker_delete_logs → push "new_assignment" (audit — hiển thị ở tab Lịch Sử Tủ)
+    Lưu ý: KHÔNG push vào /logs nữa — /logs (Nhật Ký) chỉ dành cho lịch sử
+    dùng tủ thực tế (mở tủ), gán/trả tủ xem ở tab Lịch Sử Tủ.
     """
     fdb = _fdb()
     if not fdb:
@@ -44,12 +46,12 @@ def push_borrow(mssv: str, locker_id: str, name: str, assigned_date: str = ""):
             "assigned_date": now,
             "last_open"    : now,
         })
-        fdb.reference("logs").push({
-            "time"     : now,
-            "event"    : "ASSIGN_LOCKER",
-            "mssv"     : mssv,
-            "name"     : name,
-            "locker_id": locker_id,
+        fdb.reference("locker_delete_logs").push({
+            "mssv"       : mssv,
+            "locker_id"  : locker_id,
+            "delete_time": now,
+            "reason"     : "new_assignment",
+            "name"       : name,
         })
         print(f"[Firebase] 🟢 BORROW tủ {locker_id} → {mssv}")
     except Exception as e:
@@ -87,9 +89,9 @@ def push_open(mssv: str, locker_id: str, name: str):
 def push_return(mssv: str, locker_id: str, name: str, reason: str = "student_release"):
     """
     Cập nhật Firebase sau khi sinh viên trả tủ:
-      /lockers/{id} → status=empty, current_mssv='', assigned_date='', last_open=''
-      /locker_delete_logs → push log
-      /logs               → push RELEASE_LOCKER
+      /lockers/{id}       → status=empty, current_mssv='', assigned_date='', last_open=''
+      /locker_delete_logs → push log (audit — hiển thị ở tab Lịch Sử Tủ)
+    Lưu ý: KHÔNG push vào /logs — xem ghi chú ở push_borrow().
     """
     fdb = _fdb()
     if not fdb:
@@ -108,13 +110,6 @@ def push_return(mssv: str, locker_id: str, name: str, reason: str = "student_rel
             "delete_time": now,
             "reason"     : reason,
             "name"       : name,
-        })
-        fdb.reference("logs").push({
-            "time"     : now,
-            "event"    : "RELEASE_LOCKER",
-            "mssv"     : mssv,
-            "name"     : name,
-            "locker_id": locker_id,
         })
         print(f"[Firebase] 🔒 RETURN tủ {locker_id} bởi {mssv} ({reason})")
     except Exception as e:
@@ -158,6 +153,22 @@ def push_has_face(mssv: str):
         print(f"[Firebase] 🤖 has_face=True cho {mssv}")
     except Exception as e:
         print(f"[Firebase] ✗ push_has_face {mssv}: {e}")
+
+
+# ── Push sau khi đổi mật khẩu (tắt is_first_login) ────────────────────────────
+def push_password_changed(mssv: str, new_password: str):
+    """Đồng bộ mật khẩu mới + is_first_login=False lên Firebase sau khi user tự đổi."""
+    fdb = _fdb()
+    if not fdb:
+        return
+    try:
+        fdb.reference(f"users/{mssv}").update({
+            "password": new_password,
+            "is_first_login": False,
+        })
+        print(f"[Firebase] 🔑 Đã đổi mật khẩu cho {mssv}")
+    except Exception as e:
+        print(f"[Firebase] ✗ push_password_changed {mssv}: {e}")
 
 
 # ── Push kiosk heartbeat ──────────────────────────────────────────────────────

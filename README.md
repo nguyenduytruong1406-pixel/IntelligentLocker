@@ -106,23 +106,31 @@ SML/
 
 ### Kiosk Stack Index (QStackedWidget)
 
-| Index | Controller | Màn hình |
+> **Cập nhật 15/07/2026:** luồng đăng ký trực tiếp tại Kiosk (`RegisterController`,
+> `PassWordController`, `SendEmailController`, `EnterOtpController`,
+> `ServiceController`, `MenuServiceController`) đã bị **bỏ hẳn** — thay bằng luồng
+> Google Form (xem mục "Luồng đăng ký tài khoản mới" bên dưới). Bảng dưới đây phản
+> ánh đúng `add_page()` hiện tại trong `main.py`; index là do `QStackedWidget` tự
+> gán theo thứ tự `addWidget()`, không cố định — mọi controller phải tra qua
+> `PAGES["ten_trang"]`, không dùng số cứng.
+
+| Tên trong `PAGES` | Controller | Màn hình |
 |---|---|---|
-| 0 | `BeginController` | Màn hình chờ (idle) |
-| 1 | `LoginController` | Nhập MSSV |
-| 2 | `RegisterController` | Đăng ký tài khoản |
-| 3 | `SelectModeController` | Menu Mở tủ / Trả tủ |
-| 4 | `SelectLockerController` | Chọn tủ trống |
-| 5 | `LoadingController` | Loading |
-| 6 | `SuccessController` | Thành công |
-| 7 | `VideoScreenController` | Video giới thiệu |
-| 8 | `AuthMethodController` | Chọn xác thực (mặt / mật khẩu) |
-| 9 | `PassWordController` | Nhập mật khẩu |
-| 11 | `SendEmailController` | Gửi OTP |
-| 12 | `EnterOtpController` | Nhập OTP |
-| 13 | `ServiceController` | Dịch vụ |
-| 14 | `MenuServiceController` | Menu dịch vụ |
-| 15 | `FaceController` | Camera xác thực / đăng ký khuôn mặt |
+| `begin` | `BeginController` | Màn hình chờ (idle) |
+| `login` | `LoginController` | Nhập MSSV |
+| `loading` | `LoadingController` | Loading |
+| `success` | `SuccessController` | Thành công |
+| `video` | `VideoScreenController` | Video giới thiệu |
+| `auth_method` | `AuthMethodController` | Chọn xác thực (khuôn mặt / mật khẩu) |
+| `face` | `FaceController` | Camera xác thực / đăng ký khuôn mặt (dùng chung 1 trang cho cả `mode="auth"` và `mode="register"` qua `set_mode()`) |
+| `select_mode` | `SelectModeController` | Menu Mở tủ / Trả tủ (ESC → về `begin`) |
+| `change_pass` | `ChangePassController` | Đổi mật khẩu lần đầu (từ SML) |
+| `next_cam` | `NextCamController` | Màn hình gợi ý phương án khác khi xác thực khuôn mặt thất bại (nút "thử lại" / "home") |
+| `qr_code` | `QRController` | Hiện mã QR cho luồng đăng ký Google Form |
+
+> ⚠️ `select_locker` (`SelectLockerController`) **chưa có trong bảng trên** — file
+> nguồn `select_locker_controller.py` hiện bị thiếu (chỉ còn `.pyc`), chưa được
+> đăng ký vào `PAGES`. Xem mục Known Issues.
 
 ### Luồng điều hướng Kiosk
 
@@ -131,28 +139,32 @@ BeginController (Idle)
   └─ nhập MSSV ──────────────────────────────────► LoginController
                                                         │
                                               AuthMethodController
-                                              ┌──────────┴──────────┐
-                                         Khuôn mặt            Mật khẩu
-                                              │                     │
-                                        FaceController      PasswordController
-                                        (mode=auth)               │
-                                         ┌────┴────┐              │
-                                    has_face    no_face           │
-                                         │          │             │
-                                    xác thực    FaceController    │
-                                    khuôn mặt  (mode=register)   │
-                                         │                        │
-                                         └──────────┬─────────────┘
-                                                    ▼
-                                           SelectModeController
-                                           ┌────────┴────────┐
-                                      Chưa có tủ        Đã có tủ
-                                           │                 │
-                                  SelectLockerController  ┌──┴──┐
-                                  (chọn tủ trống)       Mở   Trả
-                                           │             tủ    tủ
-                                     gán tủ → open
+                                        (đăng nhập mssv mật khẩu _ sau đó tới khuôn mặt,
+                                         password_controller.py bỏ khỏi luồng vì
+                                         admin cấp mật khẩu/tủ sẵn ngay khi duyệt)
+                                                        │
+                                                FaceController
+                                                 ┌────┴────┐
+                                            has_face    no_face
+                                                 │          │
+                                          mode="auth"  mode="register"
+                                          xác thực     đăng ký khuôn mặt
+                                                 │          │
+                                                 └────┬─────┘
+                                                      ▼
+                                            SelectModeController  ── ESC ──► begin
+                                            ┌────────┴────────┐
+                                       Chưa có tủ        Đã có tủ
+                                            │                 │
+                                   SelectLockerController   ┌──┴──┐
+                                   (chọn tủ trống)         Mở   Trả
+                                            │               tủ    tủ
+                                      gán tủ → open
 ```
+
+> ⚠️ `SelectLockerController` trong sơ đồ trên **hiện chưa có mã nguồn** trong dự
+> án (chỉ còn `.pyc`) — nhánh "chưa có tủ" mô tả đúng thiết kế nhưng chưa chạy
+> được trên thực tế cho tới khi file này được khôi phục và đăng ký vào `PAGES`.
 
 ### Pipeline AI (FaceWorker — QThread)
 
@@ -257,14 +269,22 @@ Admin vào Web Dashboard → tab "Đơn Đăng Ký" → tìm theo MSSV/tên
       ▼
 Bấm "➕ Thêm tài khoản" (chỉ sau khi đã kiểm tra đơn giấy)
       │
-      ├─► Ghi /users/{mssv} (is_approved:1, has_face:false)
-      └─► Đánh dấu /locker_requests/{mssv}.status = "approved" (giữ lại lịch sử)
+      ├─► Ghi /users/{mssv} (is_first_login:true, has_face:false)
+      ├─► Đánh dấu /locker_requests/{mssv}.status = "approved" (giữ lại lịch sử)
+      │
+      ├─── Kiosk online? ──► Ghi /pending_credentials/{mssv}
+      │                          │
+      │                          ▼
+      │                   sync_listener.py đọc, gửi mail mật khẩu, tự xóa node
+      │
+      └─── Kiosk offline? ─► Web gửi thẳng qua EmailJS (templateIdCredentials)
+                                 │
+                                 ▼
+                          Ghi /credential_email_log/{mssv} (audit)
       │
       ▼
-sync_listener.py (on_user_change — đã có sẵn, lắng nghe /users) bắt sự kiện
-      │
-      ├─► Đẩy user mới xuống SQLite kiosk ngay lập tức (realtime)
-      └─► Gửi mail "Tài khoản đã được duyệt" cho sinh viên
+sync_listener.py (on_user_change — đã có sẵn, lắng nghe /users) đồng thời
+đẩy user mới xuống SQLite kiosk ngay lập tức (realtime)
       │
       ▼
 Sinh viên ra Kiosk, nhập MSSV → has_face=false → tự động vào luồng enroll khuôn mặt
@@ -298,16 +318,17 @@ landing.html
 | `register.html` | *(Không còn dùng trong luồng chính)* — đăng ký đã chuyển sang Google Form + QR tại Kiosk | Không |
 | `user-dashboard.html` | Tra cứu tủ, idle warning, yêu cầu trả tủ | Không |
 
-### 6 Tab trong index.html
+### 7 Tab trong index.html
 
 | Tab | Nội dung |
 |---|---|
-| 🏠 Trang Chủ | 5 stat cards: Đã duyệt · Chờ duyệt · Tủ trống · Tủ đang dùng · **Kiosk status** |
-| 👥 Sinh Viên | Bảng users · tìm kiếm · duyệt/khóa · gán tủ · xóa thẻ thủ công |
-| 🗄 Tủ | Sơ đồ tủ realtime · gán/trả thủ công |
+| 🏠 Trang Chủ | Stat cards: Tổng sinh viên · Tủ trống · Tủ đang dùng · Yêu cầu trả tủ · **Kiosk status** |
+| 👥 Sinh Viên | Bảng users · tìm kiếm · gán tủ · xóa thẻ thủ công (không còn duyệt/khóa — tài khoản luôn active ngay) |
+| 🗄 Tủ Khóa | Sơ đồ tủ realtime · gán/trả thủ công |
+| 📜 Nhật Ký | Log truy cập (OPEN_LOCKER, FACE_REGISTER...) |
+| 📋 Lịch Sử Tủ | Log LOCKER_DELETE_LOG · search · export CSV |
 | 🔄 Trả Tủ | Bảng yêu cầu trả tủ pending · xác nhận trả |
-| 📋 Lịch Sử | Log LOCKER_DELETE_LOG · search · export CSV |
-| 📝 Đơn Đăng Ký | Đơn từ Google Form (`locker_requests`) · tìm theo MSSV/tên · nút "➕ Thêm tài khoản" cấp tài khoản sau khi đã nhận đơn giấy ký tay |
+| 📝 Đơn Đăng Ký | Đơn từ Google Form (`locker_requests`) · tìm theo MSSV/tên · nút "➕ Thêm tài khoản" · cột "Gửi Mail" (trạng thái gửi mật khẩu realtime) |
 
 ---
 
@@ -318,11 +339,15 @@ Users (
     mssv          TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
     password_hash TEXT NOT NULL,         -- SHA-256
-    is_approved   INTEGER DEFAULT 0,     -- 0 | 1
+    is_first_login INTEGER DEFAULT 1,    -- 0 | 1 (đổi 1→0 khi sinh viên tự đổi mật khẩu)
     has_face      INTEGER DEFAULT 0,     -- 0 | 1
     face_embedding BLOB,                 -- pickle(np.ndarray 128-D)
     role          TEXT DEFAULT 'student',
     email         TEXT DEFAULT ''
+    -- ⚠️ is_approved đã bị loại bỏ (15/07/2026) — xem README mục Firebase Structure.
+    -- ⚠️ Schema này có thể chưa đầy đủ: user_repository.py còn dùng account_status,
+    --    warned_at, last_active_time, registered_at — cần đối chiếu lại DDL thật
+    --    trong database.py để cập nhật chính xác.
 )
 
 Lockers (
@@ -358,14 +383,22 @@ LOCKER_DELETE_LOG (
 ## 🔥 Firebase Structure
 
 ```
-/users/{mssv}                    → name, is_approved, has_face, role, email, registered_at
+/users/{mssv}                    → name, is_first_login, has_face, role, email, registered_at
 /lockers/{L01}                   → status, current_mssv, size, last_open, assigned_date
 /logs/{push_id}                  → time, event, locker_id, mssv, name
 /locker_delete_logs/{push_id}    → mssv, locker_id, delete_time, reason
+                                    (reason: student_release · admin_force · admin_delete_card ·
+                                     new_assignment · sync_auto_fix)
 /release_requests/{mssv}         → mssv, locker_id, requested_at, status
 /locker_requests/{mssv}          → mssv, name, email, khoa, size_requested,
                                     requested_at, status ("pending"|"approved"), approved_at
                                     (ghi bởi Google Apps Script qua OAuth2 Bearer token)
+/pending_credentials/{mssv}      → password, locker_id, expiry_date, created_at
+                                    (node tạm — sync_listener.py đọc khi Kiosk online,
+                                    gửi mail rồi tự xóa; nếu Kiosk offline, web admin gửi
+                                    thẳng qua EmailJS thay vì ghi node này)
+/credential_email_log/{mssv}     → locker_id, expiry_date, sent_via, sent_at
+                                    (audit log — chỉ ghi khi gửi qua EmailJS lúc Kiosk offline)
 /kiosk_status/last_seen          → ISO timestamp (heartbeat mỗi 30s)
 /kiosk_status/connected          → bool
 /otp_requests/{mssv}             → email, name, requested (web → kiosk)
@@ -373,6 +406,10 @@ LOCKER_DELETE_LOG (
 /verify_attempts/{mssv}          → code, ts (web → kiosk)
 /verify_results/{mssv}           → ok, reason, ts (kiosk → web)
 ```
+
+> **Lưu ý (15/07/2026):** `is_approved` đã bị loại bỏ hoàn toàn khỏi `/users/{mssv}` — tài khoản
+> giờ luôn active ngay khi admin tạo (không còn trạng thái "chờ duyệt" trung gian). Thay vào đó
+> có `is_first_login` (bool) đánh dấu sinh viên còn đang dùng mật khẩu do admin cấp, chưa tự đổi.
 
 ### Security Rules (cập nhật 09/07/2026)
 
@@ -399,6 +436,8 @@ LOCKER_DELETE_LOG (
       ".read": "auth != null",
       ".write": "auth != null"
     },
+    "pending_credentials": { "$mssv": { ".read": "auth != null", ".write": "auth != null" } },
+    "credential_email_log": { "$mssv": { ".read": "auth != null", ".write": "auth != null" } },
     "otp_requests":  { "$mssv": { ".read": "auth != null", ".write": true } },
     "otp_tokens":    { "$mssv": { ".read": "auth != null", ".write": "auth != null" } },
     "verify_attempts":{ "$mssv": { ".read": "auth != null", ".write": true } },
@@ -413,10 +452,12 @@ LOCKER_DELETE_LOG (
 
 | Trường | Quy tắc |
 |---|---|
-| `name`, `is_approved`, `role` | Firebase thắng |
+| `name`, `role` | Firebase thắng |
+| `is_first_login` | Firebase override khi có giá trị rõ ràng, ngược lại Kiosk (local) thắng — vì field đổi khi sinh viên tự đổi mật khẩu tại Kiosk |
 | `has_face`, `face_embedding` | Local thắng (biometric không bị ghi đè từ web) |
 | `Lockers.last_open` | Lấy giá trị **mới hơn** (ISO string compare) |
-| Xóa tài khoản | Firebase thắng → xóa SQLite + trả tủ liên quan |
+| Xóa tài khoản | Firebase thắng → xóa SQLite + trả tủ liên quan (clear cả `status`, `current_mssv`, `assigned_date`, `last_open`) |
+| Locker đã trả nhưng SQLite còn sót | Chỉ tự dọn (`sync_auto_fix`) nếu `assigned_date` hiện tại **cũ hơn/bằng** lần trả gần nhất trong `locker_delete_logs` — tránh xóa nhầm lần gán lại hợp lệ sau đó |
 
 ---
 
@@ -438,11 +479,13 @@ LOCKER_DELETE_LOG (
 window.EMAILJS_CONFIG = {
   publicKey : "YOUR_PUBLIC_KEY",
   serviceId : "YOUR_SERVICE_ID",
-  templateId: "YOUR_TEMPLATE_ID"
+  templateId: "YOUR_OTP_TEMPLATE_ID",              // gửi OTP trả tủ
+  templateIdCredentials: "YOUR_CREDENTIALS_TEMPLATE_ID"  // gửi mật khẩu khi Kiosk offline
 };
 ```
 
-> Dùng làm fallback gửi OTP khi Kiosk offline (`last_seen > 90s`).
+> - `templateId` — dùng làm fallback gửi OTP khi Kiosk offline (`last_seen > 90s`), gọi từ `user-dashboard.html`.
+> - `templateIdCredentials` — dùng làm fallback gửi tài khoản + mật khẩu khi admin duyệt đơn lúc Kiosk offline, gọi từ `index.html` (`confirmApproveAccount()`). Biến template: `to_name`, `to_email`, `mssv`, `password`, `locker_id`, `expiry_date`.
 
 ### .gitignore
 
@@ -469,8 +512,6 @@ IntelligentLocker.db
 | `LOCKOUT_SECS` | `face_worker.py` | `60` | Thời gian lockout (giây) |
 | `KIOSK_ONLINE_SECS` | `user-dashboard.html` | `90` | last_seen < 90s → Kiosk ONLINE |
 | `OTP_MAX_ATTEMPTS` | `sync_listener.py` | `5` | Số lần thử OTP sai tối đa |
-| `PENDING_EXPIRE_DAYS` | `cleanup_service.py` | `7` | Ngày tự xóa tài khoản chờ duyệt |
-| `PENDING_WARN_DAYS` | `cleanup_service.py` | `2` | Ngày gửi mail cảnh báo trước khi xóa |
 
 ---
 
@@ -516,6 +557,8 @@ py -3.11 sync_tool.py --push    # Chỉ SQLite → Firebase
 | 9 tủ cố định | `L01–L09` hardcode trong DB seed; mở rộng cần sửa migration |
 | 1 kiosk | Kiến trúc hiện tại giả định 1 kiosk duy nhất |
 | Offline EmailJS | OTP mode offline sinh code phía client — kém bảo mật hơn online mode |
+| **`select_locker_controller.py` thiếu mã nguồn** | Chỉ còn file `.pyc` biên dịch sẵn trong `__pycache__`, không có `.py`. Chưa đăng ký vào `PAGES` trong `main.py` — luồng "chưa có tủ → chọn tủ" (`select_mode.py::go_to_select_locker()`) hiện dùng `setCurrentIndex(4)` cứng, không đảm bảo đúng trang. |
+| **`delete_time` chưa đồng nhất định dạng** | 2/3 chỗ ghi (`deleteUserCard()`, `handleRelease()` trong `index.html`) đang dùng `toLocaleString('vi-VN')` (không sort được theo string), trong khi `sync_tool.py` so sánh trực tiếp `assigned_date` (ISO) với `delete_time` để tránh dọn nhầm tủ vừa gán lại — cần đổi cả 2 chỗ về `toISOString().slice(0,19).replace('T',' ')` để logic chống dọn nhầm hoạt động đúng. |
 
 ---
 

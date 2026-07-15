@@ -68,3 +68,27 @@ QPushButton#service_button:checked {
     color: #546E7A;
     padding-top: 12px;
 }
+
+
+
+
+#clock_frame {
+    background-color: rgba(78, 139, 200, 0.67);
+    border-radius: 12px;
+    padding: 10px;
+}
+
+#time_label {
+    color: #1a1b33;
+    font-size: 28px;
+    font-weight: bold;
+    font-family: 'Segoe UI', sans-serif;
+    qproperty-alignment: AlignCenter;
+}
+
+#date_label {
+    color: #041535;
+    font-size: 14px;
+    font-family: 'Segoe UI', sans-serif;
+    qproperty-alignment: AlignCenter;
+}

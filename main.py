@@ -1,27 +1,14 @@
 """
-main.py — Entry point hoàn chỉnh (SML + IntelligentLocker)
+main.py — Entry point (IntelligentLocker, luồng hiện tại + SML)
 
-Stack index:
-  0  begin_page
-  1  login_page
-  2  register_page
-  3  select_mode
-  4  select_page
-  5  loading_page
-  6  success_page
-  7  video_page
-  8  auth_method_page
-  9  password_page
-  10 select_guido
-  11 sendOTP_page
-  12 enterOTP_page
-  13 service_page
-  14 menu_service
-  15 face_page          ← MỚI (FaceController auth)
-  16 face_register_page ← MỚI (FaceController register)
+Trang được đăng ký qua app.nav.PAGES (tên -> index thật), mọi controller
+điều hướng bằng PAGES["ten_trang"], KHÔNG dùng số cứng.
 """
 
 import sys
+import os
+import subprocess
+import traceback
 
 # ── 1. Migrate DB ─────────────────────────────────────────────────────────────
 from app.database.database import migrate
@@ -29,37 +16,40 @@ migrate()
 
 # ── 2. Init Firebase ──────────────────────────────────────────────────────────
 from app.firebase_config import FIREBASE_OK  # noqa: F401
-import subprocess, sys, os
+
+# NOTE: subprocess.run ở đây là BLOCKING và chạy TRƯỚC khi có QApplication.
+# Nếu sync chậm (mạng yếu / Firebase timeout) app sẽ đứng hình một lúc trước
+# khi có gì hiện ra. Giữ nguyên hành vi hiện tại, chỉ ghi chú lại.
 subprocess.run(
     [sys.executable, "sync_tool.py", "--sync"],
     cwd=os.path.dirname(os.path.abspath(__file__)),
 )
+
 # ── 3. Sync listener + daemon threads ────────────────────────────────────────
 import sync_listener
 sync_listener.start()
 
 # ── 4. GUI ────────────────────────────────────────────────────────────────────
-import traceback
 from PyQt6.QtWidgets import QApplication, QStackedWidget
 from PyQt6.QtCore    import QTimer, QObject, QEvent
 
-from app.controllers.login_controller        import LoginController
-from app.controllers.begin_controller        import BeginController
-from app.controllers.select_locker_controller import SelectLockerController
-from app.controllers.register_controller     import RegisterController
-from app.controllers.select_mode             import SelectModeController
-from app.controllers.loading_controller      import LoadingController
-from app.controllers.success_controller      import SuccessController
-from app.controllers.video                   import VideoScreenController
-from app.controllers.auth_method_controller  import AuthMethodController   # ← bản patch
-from app.controllers.password_controller     import PassWordController
-from app.controllers.service_controller      import ServiceController
-from app.controllers.GUI_DO                  import SelectMode_GUIDOController
-from app.controllers.send_otp_controller     import SendEmailController
-from app.controllers.enter_otp_controller    import EnterOtpController
-from app.controllers.menu_service            import MenuServiceController
-from app.controllers.face_controller         import FaceController         # ← MỚI
-from app.services.cleanup_service            import CleanupService
+from app.controllers.login_controller           import LoginController
+from app.controllers.begin_controller           import BeginController
+from app.controllers.loading_controller         import LoadingController
+from app.controllers.success_controller         import SuccessController
+from app.controllers.video                      import VideoScreenController
+from app.controllers.auth_method_controller     import AuthMethodController
+from app.controllers.face_controller            import FaceController
+from app.controllers.select_mode                import SelectModeController
+
+# ── Các trang mới lấy từ SML ──────────────────────────────────────────────────
+from app.controllers.change_password_controller import ChangePassController
+from app.controllers.next_cam_controller         import NextCamController
+from app.controllers.QR_controller               import QRController
+from app.controllers.cleanup_worker              import CleanupWorker
+
+from app.services.cleanup_service import CleanupService
+from app.nav import PAGES
 
 
 app = QApplication(sys.argv)
@@ -105,43 +95,42 @@ app.installEventFilter(_filter)
 # ── Stacked widget ────────────────────────────────────────────────────────────
 stacked_widget = QStackedWidget()
 
-# Tạo các trang
-loading_page      = LoadingController()
-success_page      = SuccessController()
-begin_page        = BeginController(stacked_widget)
-login_page        = LoginController(stacked_widget)
-register_page     = RegisterController(stacked_widget, loading_page, success_page)
-select_mode       = SelectModeController(stacked_widget, loading_page, success_page)
-select_page       = SelectLockerController(stacked_widget, loading_page, success_page)
-video_page        = VideoScreenController(stacked_widget)
-auth_method_page  = AuthMethodController(stacked_widget)   # ← bản patch
-password_page     = PassWordController(stacked_widget)
-service_page      = ServiceController(stacked_widget)
-select_guido      = SelectMode_GUIDOController(stacked_widget, loading_page, success_page)
-sendOTP_page      = SendEmailController(stacked_widget)
-enterOTP_page     = EnterOtpController(stacked_widget)
-menu_service      = MenuServiceController(stacked_widget, loading_page, success_page)
-face_page         = FaceController(stacked_widget, mode="auth",     cam_index=0)  # ← MỚI #15
-face_register_page= FaceController(stacked_widget, mode="register", cam_index=0)  # ← MỚI #16
+# Tạo các trang đang thực sự dùng.
+# CHÚ Ý: chỉ tạo 1 FaceController duy nhất — auth_method_controller.py chuyển
+# đổi giữa 2 chế độ "auth"/"register" bằng face_page.set_mode(), không dùng
+# 2 trang riêng biệt.
+loading_page     = LoadingController()
+success_page     = SuccessController()
+begin_page       = BeginController(stacked_widget)
+login_page       = LoginController(stacked_widget)
+video_page       = VideoScreenController(stacked_widget)
+auth_method_page = AuthMethodController(stacked_widget)
+face_page        = FaceController(stacked_widget, mode="auth", cam_index=0)
+select_mode_page = SelectModeController(stacked_widget, loading_page, success_page)
 
-# Thêm vào stack — GIỮ ĐÚNG THỨ TỰ INDEX
-stacked_widget.addWidget(begin_page)            # 0
-stacked_widget.addWidget(login_page)            # 1
-stacked_widget.addWidget(register_page)         # 2
-stacked_widget.addWidget(select_mode)           # 3
-stacked_widget.addWidget(select_page)           # 4
-stacked_widget.addWidget(loading_page)          # 5
-stacked_widget.addWidget(success_page)          # 6
-stacked_widget.addWidget(video_page)            # 7
-stacked_widget.addWidget(auth_method_page)      # 8
-stacked_widget.addWidget(password_page)         # 9
-stacked_widget.addWidget(select_guido)          # 10
-stacked_widget.addWidget(sendOTP_page)          # 11
-stacked_widget.addWidget(enterOTP_page)         # 12
-stacked_widget.addWidget(service_page)          # 13
-stacked_widget.addWidget(menu_service)          # 14
-stacked_widget.addWidget(face_page)             # 15 ← FaceController (auth)
-stacked_widget.addWidget(face_register_page)    # 16 ← FaceController (register)
+# Trang mới từ SML
+change_pass_page = ChangePassController(stacked_widget, loading_page, success_page)
+nextcam_page     = NextCamController(stacked_widget)
+QR_page          = QRController(stacked_widget)
+
+# ── Đăng ký vào stack qua PAGES (app.nav) — tên -> index thật ────────────────
+def add_page(name: str, widget) -> None:
+    stacked_widget.addWidget(widget)
+    PAGES[name] = stacked_widget.indexOf(widget)
+
+add_page("begin",       begin_page)
+add_page("login",       login_page)
+add_page("loading",     loading_page)
+add_page("success",     success_page)
+add_page("video",       video_page)
+add_page("auth_method", auth_method_page)
+add_page("face",        face_page)
+add_page("select_mode", select_mode_page)
+add_page("change_pass", change_pass_page)
+add_page("next_cam",    nextcam_page)
+add_page("qr_code",     QR_page)
+
+print("[main] PAGES index map:", PAGES)
 
 
 # ── Idle / cleanup ────────────────────────────────────────────────────────────
@@ -157,35 +146,56 @@ def show_begin():
 
 video_page.touched.connect(show_begin)
 idle_timer.timeout.connect(back_to_video)
-timer_cleanup.timeout.connect(cleanup_service.cleanup_users)
+
+# ── CleanupWorker chạy nền (QThread), tránh block UI khi gửi mail cảnh báo ───
+cleanup_worker = None  # giữ reference để tránh bị garbage collect
+
+def run_cleanup():
+    global cleanup_worker
+    if cleanup_worker and cleanup_worker.isRunning():
+        return  # đang chạy lượt trước, bỏ qua lượt này
+    cleanup_worker = CleanupWorker(cleanup_service)
+    cleanup_worker.start()
+
+timer_cleanup.timeout.connect(run_cleanup)
+run_cleanup()
 timer_cleanup.start(60_000)
 
 
 # ── Window ────────────────────────────────────────────────────────────────────
 stacked_widget.setFixedSize(1024, 600)
-stacked_widget.setCurrentIndex(7)   # bắt đầu từ màn hình video
+stacked_widget.setCurrentIndex(PAGES["video"])   # bắt đầu từ màn hình video
 stacked_widget.show()
 
+
+# ── Thoát app: connect on_quit TRƯỚC khi gọi app.exec(), và chỉ gọi 1 LẦN ────
 def on_quit():
     print("[App] Đang thoát, dọn dẹp kết nối...")
     try:
-        import sync_listener
         sync_listener._stop_event.set()
-    except: pass
-    try: timer_cleanup.stop()
-    except: pass
-    try: idle_timer.stop()
-    except: pass
+    except Exception:
+        pass
+    try:
+        timer_cleanup.stop()
+    except Exception:
+        pass
+    try:
+        idle_timer.stop()
+    except Exception:
+        pass
+    if cleanup_worker and cleanup_worker.isRunning():
+        cleanup_worker.wait(3000)
 
 app.aboutToQuit.connect(on_quit)
-app.exec()
 
-# Qt đã thoát hoàn toàn — giờ mới kill Firebase threads
+exit_code = app.exec()   # ← CHỈ gọi app.exec() một lần duy nhất
+
 try:
     import firebase_admin
     if firebase_admin._apps:
         firebase_admin.delete_app(firebase_admin.get_app())
         print("[App] Firebase đã đóng")
-except: pass
-import os
-os._exit(0)
+except Exception:
+    pass
+
+os._exit(exit_code)

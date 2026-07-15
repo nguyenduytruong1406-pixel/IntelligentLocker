@@ -33,6 +33,7 @@ from app.controllers.face_worker import FaceWorker
 from app.utils.session           import Session
 from app.services.auth_service   import AuthService
 from app.database.user_repository import UserRepository
+from app.nav                      import PAGES
 
 
 # ── Màu sắc (khớp với QSS theme của SML) ─────────────────────────────────────
@@ -314,7 +315,7 @@ class FaceController(QMainWindow):
 
     def _go_to_select_mode(self):
         self._stop_worker()
-        self.stacked_widget.setCurrentIndex(3)
+        self.stacked_widget.setCurrentIndex(PAGES["select_mode"])
 
     def _go_to_begin(self):
         self._stop_worker()

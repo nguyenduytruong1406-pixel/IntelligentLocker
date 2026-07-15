@@ -46,11 +46,13 @@ def migrate():
             ("email",             "ALTER TABLE Users ADD COLUMN email TEXT DEFAULT ''"),
             ("role",              "ALTER TABLE Users ADD COLUMN role TEXT DEFAULT 'student'"),
             ("registered_at",     "ALTER TABLE Users ADD COLUMN registered_at TEXT DEFAULT ''"),
+            ("locker_expiry_date","ALTER TABLE Users ADD COLUMN locker_expiry_date TEXT DEFAULT ''"),
             # Cột SML có thể chưa có trong IntelligentLocker
             ("account_status",    "ALTER TABLE Users ADD COLUMN account_status TEXT DEFAULT 'ACTIVE'"),
             ("last_active_time",  "ALTER TABLE Users ADD COLUMN last_active_time TEXT DEFAULT ''"),
             ("warned_at",         "ALTER TABLE Users ADD COLUMN warned_at TEXT DEFAULT NULL"),
             ("OTP",               "ALTER TABLE Users ADD COLUMN OTP NUMERIC"),
+            ("is_first_login",    "ALTER TABLE Users ADD COLUMN is_first_login INTEGER DEFAULT 0"),
         ])
 
         # ── Lockers: đảm bảo last_open tồn tại (SML chưa có) ────────────────

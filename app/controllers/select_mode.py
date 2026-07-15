@@ -23,6 +23,15 @@ class SelectModeController(QMainWindow):
         self.lay_do.clicked.connect(self.MO_TU)
         self.tra_tu.clicked.connect(self.TRA_TU)
 
+    # ── ESC → về màn hình chính (thay cho nút Home hiển thị — kiosk công khai
+    #    không nên có nút thoát rõ ràng, ESC chỉ dành cho người biết bấm) ──────
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.go_to_begin()
+        else:
+            super().keyPressEvent(event)
+
     # ── Mỗi lần màn hình được hiển thị → check trạng thái tủ ────────────────
 
     def showEvent(self, event):

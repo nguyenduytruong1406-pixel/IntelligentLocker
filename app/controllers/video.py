@@ -1,45 +1,41 @@
-from PyQt6 import QtCore, QtGui, QtWidgets, uic
-from app.paths import UI, GIF, QSS, find_video
-from PyQt6.QtWidgets import *
-from PyQt6.QtCore import QTimer, pyqtSignal, QUrl, QObject
-from PyQt6.uic import loadUi
-import sys
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QMainWindow, QVBoxLayout
+from PyQt6 import uic
 from PyQt6.QtCore import pyqtSignal, QUrl
-from PyQt6.QtMultimediaWidgets import *
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtMultimediaWidgets import QVideoWidget
 from pathlib import Path
+
 
 class VideoScreenController(QMainWindow):
 
     touched = pyqtSignal()
 
     def __init__(self, stacked_widget):
-        super(VideoScreenController,self).__init__()
-        uic.loadUi(UI("vd.ui"),self)
+        super().__init__()
 
+        uic.loadUi('app/ui/vd.ui', self)
         self.stacked_widget = stacked_widget
-        self.videoWidget = QVideoWidget()
 
+        # ===== VIDEO WIDGET =====
+        self.videoWidget = QVideoWidget()
         layout = QVBoxLayout(self.video_begin)
-        layout.setContentsMargins(0,0,0,0)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.videoWidget)
 
+        # ===== PLAYER =====
         self.player = QMediaPlayer()
         self.audio = QAudioOutput()
-
         self.player.setAudioOutput(self.audio)
         self.player.setVideoOutput(self.videoWidget)
 
-        self.player.setSource(
-            QUrl.fromLocalFile(find_video() or "")
-        )
+        # ===== LOAD VIDEO =====
+        BASE_DIR = Path(__file__).parent.parent
+        video_path = str(BASE_DIR / "assets/gif/video.mp4")
+        self.player.setSource(QUrl.fromLocalFile(video_path))
 
         self.player.play()
 
-        self.player.mediaStatusChanged.connect(
-            self.handle_loop
-        )
+        self.player.mediaStatusChanged.connect(self.handle_loop)
 
     def handle_loop(self, status):
         if status == QMediaPlayer.MediaStatus.EndOfMedia:

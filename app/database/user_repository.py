@@ -3,14 +3,16 @@ app/database/user_repository.py — Mở rộng từ SML
 Thêm:
   • save_embedding / load_embedding (face recognition từ IntelligentLocker)
   • get_user() trả dict-like Row (hỗ trợ cả cột mới)
-  • register_user() đầy đủ (is_approved, registered_at, role)
   • Giữ nguyên tất cả method cleanup của SML (get_inactive_users, mark_warned, ...)
+
+NOTE: đã bỏ khái niệm "chờ duyệt" (is_approved) — tài khoản chỉ được tạo khi
+admin cấp trực tiếp qua web (xem sync_listener.py: on_pending_credentials).
 """
 
 from app.database.database import Database
 from datetime import datetime
 import pickle
-
+import sqlite3
 
 class UserRepository:
 
@@ -35,10 +37,21 @@ class UserRepository:
     # ── Tìm kiếm ──────────────────────────────────────────────────────────────
 
     def find_user(self, mssv):
-        """Trả sqlite3.Row hoặc None. Truy cập: user['name'], user['is_approved'], ..."""
+
         with self.db.connect() as conn:
+
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM Users WHERE mssv = ?", (mssv,))
+
+            cursor.execute(
+                """
+                SELECT *
+                FROM Users
+                WHERE mssv = ?
+                """,
+                (mssv,)
+            )
+
             return cursor.fetchone()
 
     def find_password(self, mssv, password):
@@ -76,33 +89,33 @@ class UserRepository:
     # ── Đăng ký ───────────────────────────────────────────────────────────────
 
     def create_user(self, mssv, name, email, password):
-        """Đăng ký qua kiosk SML (chờ duyệt)."""
+        """Đăng ký qua kiosk SML — luồng cũ, không còn dùng ở main.py hiện tại
+        (RegisterController đã bị bỏ) nhưng giữ lại phòng khi còn nơi gọi tới."""
         with self.db.connect() as conn:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             conn.execute(
                 """
                 INSERT INTO Users
-                (mssv, name, email, password, is_approved, registered_at,
+                (mssv, name, email, password, registered_at,
                  account_status, role)
-                VALUES (?, ?, ?, ?, 0, ?, 'ACTIVE', 'student')
+                VALUES (?, ?, ?, ?, ?, 'ACTIVE', 'student')
                 """,
                 (mssv, name, email, password, now)
             )
             conn.commit()
 
-    def register_user(self, mssv, name, email, password=None,
-                      is_approved=0, role="student"):
+    def register_user(self, mssv, name, email, password=None, role="student"):
         """Đăng ký đầy đủ — dùng cho sync_listener khi pull từ Firebase."""
         with self.db.connect() as conn:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             conn.execute(
                 """
                 INSERT OR IGNORE INTO Users
-                (mssv, name, email, password, is_approved, registered_at,
+                (mssv, name, email, password, registered_at,
                  account_status, role)
-                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+                VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)
                 """,
-                (mssv, name, email, password, is_approved, now, role)
+                (mssv, name, email, password, now, role)
             )
             conn.commit()
 
@@ -165,12 +178,61 @@ class UserRepository:
             )
             conn.commit()
 
-    def approve_user(self, mssv):
+    # NOTE: đã xoá approve_user() — dead code từ khi còn khái niệm "chờ duyệt"
+    # (is_approved). Tài khoản giờ chỉ được tạo khi admin cấp trực tiếp qua
+    # web (đã active ngay, không có bước duyệt riêng để gọi hàm này nữa).
+
+    # ── Mật khẩu / First login ────────────────────────────────────────────────
+
+    def get_pass_by_mssv(self, mssv):
         with self.db.connect() as conn:
-            conn.execute(
-                "UPDATE Users SET is_approved = 1 WHERE mssv = ?", (mssv,)
+            cursor = conn.cursor()
+            cursor.execute("SELECT password FROM Users WHERE mssv = ?", (mssv,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    def update_pass(self, mssv, new_p):
+
+        with self.db.connect() as conn:
+
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                UPDATE Users
+                SET password = ?
+                WHERE mssv = ?
+                """,
+                (
+                    new_p,
+                    mssv
+                )
+            )
+
+
+            conn.commit()
+
+    def update_is_first_login(self, mssv, value):
+
+        with self.db.connect() as conn:
+            
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE Users SET is_first_login = ?
+                WHERE mssv = ?
+                """,
+                (value, mssv)
             )
             conn.commit()
+
+    def is_first_login(self, mssv):
+        with self.db.connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT is_first_login FROM Users WHERE mssv = ?", (mssv,))
+            row = cursor.fetchone()
+            return bool(row[0]) if row else False
+
 
     # ── Cleanup (giữ nguyên từ SML) ───────────────────────────────────────────
 

@@ -19,8 +19,8 @@
      <rect>
       <x>0</x>
       <y>0</y>
-      <width>1020</width>
-      <height>590</height>
+      <width>1024</width>
+      <height>600</height>
      </rect>
     </property>
     <property name="frameShape">
@@ -41,7 +41,6 @@
     </rect>
    </property>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <resources/>
  <connections/>

@@ -1,5 +1,4 @@
 from PyQt6 import QtCore, QtGui, QtWidgets, uic
-from app.paths import UI, GIF, QSS, find_video
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import QTimer, pyqtSignal, QUrl, QObject
 from PyQt6.uic import loadUi
@@ -19,14 +18,15 @@ from app.services.locker_service import LockerService
 from app.services.auth_service import AuthService
 from app.widgets.virtual_keyboard import VirtualKeyboard
 from app.widgets.touch_scroll_area import TouchScrollArea
+from app.nav import PAGES
 
-class RegisterController(QMainWindow):
+class ChangePassController(QMainWindow):
 
     def __init__(self,stacked_widget, loading_page, success_page):
 
         super().__init__()
 
-        uic.loadUi(UI("test_keyboard.ui"), self)
+        uic.loadUi("app/ui/Change_Password.ui", self)
         # self.load_style()
         self.stacked_widget = stacked_widget
         self.loading_page = loading_page
@@ -62,43 +62,41 @@ class RegisterController(QMainWindow):
 
 
         ############ EVENT  #################
-        self.fullname.installEventFilter(self)
-        self.mssv_reg.installEventFilter(self)
-        self.email_reg.installEventFilter(self)
-        self.pass_reg.installEventFilter(self)
-        self.back_begin.clicked.connect(self.go_to_begin)
-        self.register_b.clicked.connect(self.register_account)
+        self.old_pass.installEventFilter(self)
+        self.new_pass.installEventFilter(self)
+        self.verifi_pass.installEventFilter(self)
+        self.back_begin.clicked.connect(self.go_to_nextcam)
+        self.register_b.clicked.connect(self.change_pass)
 
-    def go_to_begin(self):
-        self.stacked_widget.setCurrentIndex(0)
+    def go_to_nextcam(self):
+        QTimer.singleShot(150, lambda: (self.reset_form(), self.stacked_widget.setCurrentIndex(PAGES["next_cam"])))
         self.reset_form()
 
     def go_to_login(self):
-        self.stacked_widget.setCurrentIndex(1)
+        self.stacked_widget.setCurrentIndex(PAGES["login"])
         self.reset_form()
 
 
     def reset_form(self):
-        self.fullname.clear()
-        self.mssv_reg.clear()
-        self.email_reg.clear()
-        self.pass_reg.clear()
+        self.old_pass.clear()
+        self.new_pass.clear()
+        self.verifi_pass.clear()
         self.thong_bao_reg.setText("")
 
     # def load_style(self):
     #     # Thêm encoding='utf-8' vào đây
-    #     with open(QSS("keyboard.qss"), "r", encoding="utf-8") as file:
+    #     with open("app/assets/styles/keyboard.qss", "r", encoding="utf-8") as file:
     #         self.setStyleSheet(file.read())
 
-    def register_account(self):
+    def change_pass(self):
 
-        name = self.fullname.text()
-        mssv = self.mssv_reg.text()
-        email = self.email_reg.text()
-        password = self.pass_reg.text()
+        old_p = self.old_pass.text()
+        new_p = self.new_pass.text()
+        ver_p = self.verifi_pass.text()
+        mssv = Session.current_user
+        
 
-        success, message = self.auth_service.register(mssv, name, email, password)
-
+        success, message = self.auth_service.change_password(mssv, old_p, new_p, ver_p)
         if not success:
 
             self.thong_bao_reg.setStyleSheet(
@@ -110,7 +108,7 @@ class RegisterController(QMainWindow):
         # ===== HIỆN LOADING =====
         else:
             self.loading_page.set_message(
-                "Đang tiến hành đăng kí !!"
+                "Đang đổi mật khẩu !!"
             )
 
             self.stacked_widget.setCurrentWidget(
@@ -120,8 +118,8 @@ class RegisterController(QMainWindow):
             # ===== SAU 1 GIÂY =====
 
             QTimer.singleShot(2000,lambda: self.show_success(
-                "Đăng kí thành công",
-                self.go_to_begin
+                "Đổi mật khẩu thành công",
+                self.go_to_nextcam
                 )
             )
 
@@ -131,64 +129,41 @@ class RegisterController(QMainWindow):
         if (event.type() == QEvent.Type.MouseButtonPress):
 
             # ===== FULLNAME =====
-            if source == self.fullname:
-
-                self.keyboard.show()
-
+            if source == self.old_pass:
                 self.keyboard.mode = "ABC"
-
                 self.keyboard.build_keyboard()
-
-                self.keyboard.set_target(
-                    self.fullname
-                )
-
+                self.keyboard.set_target(self.old_pass)
+                self.keyboard.confirm_button = None
 
             # ===== MSSV =====
-            elif source == self.mssv_reg:
-
-                self.keyboard.show()
-
+            elif source == self.new_pass:
                 self.keyboard.mode = "NUM"
-
                 self.keyboard.build_keyboard()
-
-                self.keyboard.set_target(
-                    self.mssv_reg
-                )
-
+                self.keyboard.set_target(self.new_pass)
+                self.keyboard.confirm_button = None
 
             # ===== EMAIL =====
-            elif source == self.email_reg:
-
-                self.keyboard.show()
-
+            elif source == self.verifi_pass:
                 self.keyboard.mode = "ABC"
-
                 self.keyboard.build_keyboard()
+                self.keyboard.set_target(self.verifi_pass)
+                self.keyboard.confirm_button = self.register_b  # ← Click register khi OK
 
-                self.keyboard.set_target(
-                    self.email_reg
-                )
 
-            # ===== PASS =====
-            elif source == self.pass_reg:
+        return super().eventFilter(source, event)
+    
+    def showEvent(self, event):
+        self.keyboard.show()
+        self.keyboard.set_target(self.old_pass)
+        self.keyboard.mode = "ABC"
+        self.keyboard.build_keyboard()
+        self.keyboard.confirm_button = None
+        super().showEvent(event)
 
-                self.keyboard.show()
-
-                self.keyboard.mode = "ABC"
-
-                self.keyboard.build_keyboard()
-
-                self.keyboard.set_target(
-                    self.pass_reg
-                )
-
-        return super().eventFilter(
-            source,
-            event
-        )
-
+    def hideEvent(self, event):
+        self.keyboard.hide()
+        self.keyboard.confirm_button = None
+        super().hideEvent(event)
 
     def show_success(
         self,
@@ -209,4 +184,3 @@ class RegisterController(QMainWindow):
             delay,
             next_function
         )
-
