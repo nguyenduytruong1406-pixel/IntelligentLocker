@@ -61,7 +61,7 @@
       <number>0</number>
      </property>
      <item>
-      <widget class="QFrame" name="send_em">
+      <widget class="QFrame" name="countdown_frame">
        <property name="minimumSize">
         <size>
          <width>400</width>
@@ -74,18 +74,21 @@
          <height>16777215</height>
         </size>
        </property>
+       <property name="styleSheet">
+        <string notr="true"/>
+       </property>
        <property name="frameShape">
         <enum>QFrame::StyledPanel</enum>
        </property>
        <property name="frameShadow">
         <enum>QFrame::Raised</enum>
        </property>
-       <widget class="QLabel" name="label_3">
+       <widget class="QLabel" name="title_otp">
         <property name="geometry">
          <rect>
-          <x>30</x>
+          <x>10</x>
           <y>50</y>
-          <width>341</width>
+          <width>391</width>
           <height>51</height>
          </rect>
         </property>
@@ -93,31 +96,41 @@
          <font>
           <family>Times New Roman</family>
           <pointsize>16</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
          </font>
         </property>
         <property name="text">
          <string>Mã OTP đã được gửi đến mail</string>
         </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
        </widget>
        <widget class="QPushButton" name="send_email">
         <property name="geometry">
          <rect>
-          <x>100</x>
-          <y>410</y>
-          <width>151</width>
-          <height>91</height>
+          <x>230</x>
+          <y>450</y>
+          <width>131</width>
+          <height>61</height>
          </rect>
         </property>
+        <property name="font">
+         <font>
+          <pointsize>18</pointsize>
+         </font>
+        </property>
         <property name="text">
-         <string>SEND</string>
+         <string>Gửi lại</string>
         </property>
        </widget>
-       <widget class="QLabel" name="label_5">
+       <widget class="QLabel" name="chua_nhan">
         <property name="geometry">
          <rect>
-          <x>30</x>
-          <y>330</y>
-          <width>121</width>
+          <x>20</x>
+          <y>460</y>
+          <width>231</width>
           <height>41</height>
          </rect>
         </property>
@@ -128,15 +141,18 @@
          </font>
         </property>
         <property name="text">
-         <string>**Gửi lại mã</string>
+         <string>Bạn chưa nhận được mã ?</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
         </property>
        </widget>
-       <widget class="QLabel" name="label_6">
+       <widget class="QLabel" name="vui_long">
         <property name="geometry">
          <rect>
-          <x>90</x>
-          <y>110</y>
-          <width>341</width>
+          <x>10</x>
+          <y>100</y>
+          <width>391</width>
           <height>51</height>
          </rect>
         </property>
@@ -149,27 +165,6 @@
         <property name="text">
          <string>Vui lòng nhập mã trong:</string>
         </property>
-       </widget>
-       <widget class="QLabel" name="time_label">
-        <property name="geometry">
-         <rect>
-          <x>30</x>
-          <y>150</y>
-          <width>291</width>
-          <height>71</height>
-         </rect>
-        </property>
-        <property name="font">
-         <font>
-          <family>Times New Roman</family>
-          <pointsize>20</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>30 giây</string>
-        </property>
         <property name="alignment">
          <set>Qt::AlignCenter</set>
         </property>
@@ -177,16 +172,16 @@
        <widget class="QLabel" name="thong_bao_email">
         <property name="geometry">
          <rect>
-          <x>80</x>
+          <x>20</x>
           <y>510</y>
-          <width>291</width>
+          <width>231</width>
           <height>41</height>
          </rect>
         </property>
         <property name="font">
          <font>
           <family>Times New Roman</family>
-          <pointsize>10</pointsize>
+          <pointsize>14</pointsize>
           <weight>75</weight>
           <bold>true</bold>
          </font>
@@ -195,10 +190,133 @@
          <string/>
         </property>
        </widget>
+       <widget class="QFrame" name="frame_time">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>170</y>
+          <width>381</width>
+          <height>121</height>
+         </rect>
+        </property>
+        <property name="frameShape">
+         <enum>QFrame::StyledPanel</enum>
+        </property>
+        <property name="frameShadow">
+         <enum>QFrame::Raised</enum>
+        </property>
+        <layout class="QHBoxLayout" name="horizontalLayout_4">
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QWidget" name="widget_3" native="true">
+           <property name="maximumSize">
+            <size>
+             <width>150</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <widget class="QLabel" name="clock_icon">
+            <property name="geometry">
+             <rect>
+              <x>10</x>
+              <y>-10</y>
+              <width>151</width>
+              <height>111</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>TextLabel</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+           </widget>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="widget_4" native="true">
+           <layout class="QVBoxLayout" name="verticalLayout">
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="time_label_otp">
+              <property name="maximumSize">
+               <size>
+                <width>229</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="font">
+               <font>
+                <family>Times New Roman</family>
+                <pointsize>20</pointsize>
+                <weight>75</weight>
+                <bold>true</bold>
+               </font>
+              </property>
+              <property name="text">
+               <string>30 giây</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="countdown_hint">
+              <property name="maximumSize">
+               <size>
+                <width>200</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Còn lại để nhập mã</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
       </widget>
      </item>
      <item>
       <widget class="QFrame" name="enter_em">
+       <property name="enabled">
+        <bool>true</bool>
+       </property>
        <property name="layoutDirection">
         <enum>Qt::LeftToRight</enum>
        </property>
@@ -208,666 +326,479 @@
        <property name="frameShadow">
         <enum>QFrame::Raised</enum>
        </property>
-       <widget class="QWidget" name="widget_2" native="true">
+       <widget class="QWidget" name="">
         <property name="geometry">
          <rect>
-          <x>160</x>
-          <y>60</y>
-          <width>311</width>
-          <height>71</height>
+          <x>50</x>
+          <y>3</y>
+          <width>471</width>
+          <height>591</height>
          </rect>
         </property>
-        <property name="styleSheet">
-         <string notr="true">QWidget{
-border-radius:20px;
-background-color:white;
-}</string>
-        </property>
-        <layout class="QHBoxLayout" name="horizontalLayout_3">
+        <layout class="QVBoxLayout" name="verticalLayout_2">
          <property name="spacing">
-          <number>8</number>
-         </property>
-         <item>
-          <widget class="QLabel" name="l1">
-           <property name="font">
-            <font>
-             <pointsize>-1</pointsize>
-            </font>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QLabel{
-border:none;
-font-size:28px;
-qproperty-alignment:AlignCenter;
-}</string>
-           </property>
-           <property name="text">
-            <string>-</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="l2">
-           <property name="font">
-            <font>
-             <pointsize>-1</pointsize>
-            </font>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QLabel{
-border:none;
-font-size:28px;
-qproperty-alignment:AlignCenter;
-}</string>
-           </property>
-           <property name="text">
-            <string>-</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="l3">
-           <property name="font">
-            <font>
-             <pointsize>-1</pointsize>
-            </font>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QLabel{
-border:none;
-font-size:28px;
-qproperty-alignment:AlignCenter;
-}</string>
-           </property>
-           <property name="text">
-            <string>-</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="l4">
-           <property name="font">
-            <font>
-             <pointsize>-1</pointsize>
-            </font>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QLabel{
-border:none;
-font-size:28px;
-qproperty-alignment:AlignCenter;
-}</string>
-           </property>
-           <property name="text">
-            <string>-</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-       <widget class="QLabel" name="label_4">
-        <property name="geometry">
-         <rect>
-          <x>200</x>
-          <y>10</y>
-          <width>261</width>
-          <height>51</height>
-         </rect>
-        </property>
-        <property name="font">
-         <font>
-          <family>Sitka Small</family>
-          <pointsize>18</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>NHẬP MÃ OTP</string>
-        </property>
-       </widget>
-       <widget class="QWidget" name="layoutWidget_2">
-        <property name="geometry">
-         <rect>
-          <x>140</x>
-          <y>190</y>
-          <width>351</width>
-          <height>353</height>
-         </rect>
-        </property>
-        <layout class="QGridLayout" name="gridLayout_2">
-         <property name="leftMargin">
-          <number>11</number>
+          <number>0</number>
          </property>
          <property name="topMargin">
-          <number>11</number>
+          <number>12</number>
          </property>
-         <property name="rightMargin">
-          <number>11</number>
-         </property>
-         <item row="0" column="0" alignment="Qt::AlignHCenter">
-          <widget class="QPushButton" name="b1">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::LeftToRight</enum>
-           </property>
-           <property name="autoFillBackground">
-            <bool>false</bool>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
-}</string>
+         <item>
+          <widget class="QLabel" name="enter_otp_title">
+           <property name="font">
+            <font>
+             <family>Sitka Small</family>
+             <pointsize>18</pointsize>
+            </font>
            </property>
            <property name="text">
-            <string>1</string>
+            <string>NHẬP MÃ OTP</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
            </property>
           </widget>
          </item>
-         <item row="0" column="1">
-          <widget class="QPushButton" name="b2">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::LeftToRight</enum>
-           </property>
+         <item>
+          <widget class="QWidget" name="frame_enter" native="true">
            <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
+            <string notr="true"/>
+           </property>
+           <layout class="QHBoxLayout" name="horizontalLayout_3">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="l1">
+              <property name="font">
+               <font>
+                <pointsize>-1</pointsize>
+               </font>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLabel{
+border:none;
+font-size:28px;
+qproperty-alignment:AlignCenter;
 }</string>
+              </property>
+              <property name="text">
+               <string>-</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="l2">
+              <property name="font">
+               <font>
+                <pointsize>-1</pointsize>
+               </font>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLabel{
+border:none;
+font-size:28px;
+qproperty-alignment:AlignCenter;
+}</string>
+              </property>
+              <property name="text">
+               <string>-</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="l3">
+              <property name="font">
+               <font>
+                <pointsize>-1</pointsize>
+               </font>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLabel{
+border:none;
+font-size:28px;
+qproperty-alignment:AlignCenter;
+}</string>
+              </property>
+              <property name="text">
+               <string>-</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="l4">
+              <property name="font">
+               <font>
+                <pointsize>-1</pointsize>
+               </font>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLabel{
+border:none;
+font-size:28px;
+qproperty-alignment:AlignCenter;
+}</string>
+              </property>
+              <property name="text">
+               <string>-</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="thong_bao_otp">
+           <property name="font">
+            <font>
+             <family>Times New Roman</family>
+             <pointsize>10</pointsize>
+             <weight>75</weight>
+             <bold>true</bold>
+            </font>
            </property>
            <property name="text">
-            <string>2</string>
+            <string/>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
            </property>
           </widget>
          </item>
-         <item row="0" column="2" alignment="Qt::AlignHCenter">
-          <widget class="QPushButton" name="b3">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
+         <item>
+          <layout class="QGridLayout" name="gridLayout_2" rowstretch="1,1,1,1" columnstretch="1,1,1">
+           <property name="leftMargin">
+            <number>8</number>
            </property>
-           <property name="maximumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
+           <property name="topMargin">
+            <number>8</number>
            </property>
-           <property name="layoutDirection">
-            <enum>Qt::LeftToRight</enum>
+           <property name="rightMargin">
+            <number>8</number>
            </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
-}</string>
+           <property name="bottomMargin">
+            <number>8</number>
            </property>
-           <property name="text">
-            <string>3</string>
+           <property name="spacing">
+            <number>16</number>
            </property>
-          </widget>
-         </item>
-         <item row="1" column="0" alignment="Qt::AlignHCenter">
-          <widget class="QPushButton" name="b4">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::RightToLeft</enum>
-           </property>
-           <property name="autoFillBackground">
-            <bool>false</bool>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
-}</string>
-           </property>
-           <property name="text">
-            <string>4</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QPushButton" name="b5">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::RightToLeft</enum>
-           </property>
-           <property name="autoFillBackground">
-            <bool>false</bool>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
-}</string>
-           </property>
-           <property name="text">
-            <string>5</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="2" alignment="Qt::AlignHCenter">
-          <widget class="QPushButton" name="b6">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::RightToLeft</enum>
-           </property>
-           <property name="autoFillBackground">
-            <bool>false</bool>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
-}</string>
-           </property>
-           <property name="text">
-            <string>6</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="0" alignment="Qt::AlignHCenter">
-          <widget class="QPushButton" name="b7">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::RightToLeft</enum>
-           </property>
-           <property name="autoFillBackground">
-            <bool>false</bool>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
-}</string>
-           </property>
-           <property name="text">
-            <string>7</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="1">
-          <widget class="QPushButton" name="b8">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::RightToLeft</enum>
-           </property>
-           <property name="autoFillBackground">
-            <bool>false</bool>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
-}</string>
-           </property>
-           <property name="text">
-            <string>8</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="2" alignment="Qt::AlignHCenter">
-          <widget class="QPushButton" name="b9">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>75</width>
-             <height>16777215</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::RightToLeft</enum>
-           </property>
-           <property name="autoFillBackground">
-            <bool>false</bool>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
-}</string>
-           </property>
-           <property name="text">
-            <string>9</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="0">
-          <widget class="QPushButton" name="clear_b">
-           <property name="minimumSize">
-            <size>
-             <width>120</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>120</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="cursor">
-            <cursorShape>OpenHandCursor</cursorShape>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton{
-background-color:#2b5a98;
-color:white;
-	background-color: rgb(43, 90, 152);
-font-size:10px;
-border-radius:20px;
-padding:15px;
-}
-
-QPushButton:hover{
-background-color:#34495E;
-}</string>
-           </property>
-           <property name="text">
-            <string>CLEAR</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="1">
-          <widget class="QPushButton" name="b0">
-           <property name="minimumSize">
-            <size>
-             <width>75</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::LeftToRight</enum>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton {
-    background-color: #a2cbff; /* Nền trong suốt */
-	background-color: rgb(162, 203, 255);
-    color: #ffffff;                /* Chữ trắng */
-    border: 1px solid #444444;     /* Viền xám mờ */
-    border-radius: 12px;           /* Bo góc hiện đại, không quá tròn */
-    font-family: &quot;Segoe UI&quot;;
-    font-size: 16px;
-    padding: 10px;
-}
-
-QPushButton:hover {
-    border: 1px solid #00f2ff;     /* Viền sáng xanh khi di chuột */
-    color: #00f2ff;                /* Chữ sáng xanh */
-    background-color: rgba(0, 242, 255, 0.05); /* Nền hơi xanh cực nhẹ */
-}
-
-QPushButton:pressed {
-    background-color: rgba(0, 242, 255, 0.2);
-}</string>
-           </property>
-           <property name="text">
-            <string>0</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="2">
-          <widget class="QPushButton" name="enter_b">
-           <property name="minimumSize">
-            <size>
-             <width>120</width>
-             <height>80</height>
-            </size>
-           </property>
-           <property name="cursor">
-            <cursorShape>OpenHandCursor</cursorShape>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">QPushButton{
-background-color:#2b5a98;
-color:white;
-	background-color: rgb(43, 90, 152);
-font-size:10px;
-border-radius:20px;
-padding:15px;
-}
-
-QPushButton:hover{
-background-color:#34495E;
-}</string>
-           </property>
-           <property name="text">
-            <string>ENTER</string>
-           </property>
-          </widget>
+           <item row="0" column="0" alignment="Qt::AlignHCenter">
+            <widget class="QPushButton" name="b1">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::LeftToRight</enum>
+             </property>
+             <property name="autoFillBackground">
+              <bool>false</bool>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>1</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QPushButton" name="b2">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::LeftToRight</enum>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>2</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="2" alignment="Qt::AlignHCenter">
+            <widget class="QPushButton" name="b3">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::LeftToRight</enum>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>3</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0" alignment="Qt::AlignHCenter">
+            <widget class="QPushButton" name="b4">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::RightToLeft</enum>
+             </property>
+             <property name="autoFillBackground">
+              <bool>false</bool>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>4</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QPushButton" name="b5">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::RightToLeft</enum>
+             </property>
+             <property name="autoFillBackground">
+              <bool>false</bool>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>5</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="2" alignment="Qt::AlignHCenter">
+            <widget class="QPushButton" name="b6">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::RightToLeft</enum>
+             </property>
+             <property name="autoFillBackground">
+              <bool>false</bool>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>6</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0" alignment="Qt::AlignHCenter">
+            <widget class="QPushButton" name="b7">
+             <property name="minimumSize">
+              <size>
+               <width>75</width>
+               <height>80</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::RightToLeft</enum>
+             </property>
+             <property name="autoFillBackground">
+              <bool>false</bool>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>7</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QPushButton" name="b8">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::RightToLeft</enum>
+             </property>
+             <property name="autoFillBackground">
+              <bool>false</bool>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>8</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="2" alignment="Qt::AlignHCenter">
+            <widget class="QPushButton" name="b9">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::RightToLeft</enum>
+             </property>
+             <property name="autoFillBackground">
+              <bool>false</bool>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>9</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="0">
+            <widget class="QPushButton" name="clear_b">
+             <property name="minimumSize">
+              <size>
+               <width>120</width>
+               <height>80</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>120</width>
+               <height>80</height>
+              </size>
+             </property>
+             <property name="cursor">
+              <cursorShape>OpenHandCursor</cursorShape>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>CLEAR</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QPushButton" name="b0">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>90</width>
+               <height>90</height>
+              </size>
+             </property>
+             <property name="layoutDirection">
+              <enum>Qt::LeftToRight</enum>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>0</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="2">
+            <widget class="QPushButton" name="enter_b">
+             <property name="minimumSize">
+              <size>
+               <width>120</width>
+               <height>80</height>
+              </size>
+             </property>
+             <property name="cursor">
+              <cursorShape>OpenHandCursor</cursorShape>
+             </property>
+             <property name="styleSheet">
+              <string notr="true"/>
+             </property>
+             <property name="text">
+              <string>ENTER</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </item>
         </layout>
-       </widget>
-       <widget class="QLabel" name="thong_bao_otp">
-        <property name="geometry">
-         <rect>
-          <x>240</x>
-          <y>150</y>
-          <width>171</width>
-          <height>21</height>
-         </rect>
-        </property>
-        <property name="font">
-         <font>
-          <family>Times New Roman</family>
-          <pointsize>10</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
        </widget>
       </widget>
      </item>

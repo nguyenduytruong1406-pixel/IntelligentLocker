@@ -22,6 +22,8 @@ class QRController(QMainWindow):
             btn.setCheckable(True)
             btn.setAutoExclusive(False)
 
+            btn.setProperty("class", "systemButton")
+            
             def create_release_handler(b=btn):
                 def safe_clear():
                     try:

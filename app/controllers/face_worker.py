@@ -23,11 +23,12 @@ from hardware.camera              import CameraBackend
 from ai.face_utils                import center_face
 from ai.ai_utils                  import liveness, landmarks, embedding, ir_to_bgr
 from app.database.user_repository import UserRepository
+from app.utils.session             import Session
 
 MATCH_THRESHOLD  = 0.45
 CONFIRM_FRAMES   = 3
 LIVENESS_WINDOW  = 7   # số frame gần nhất để xét liveness
-LIVENESS_MIN_OK  = 2    # cần ít nhất 4/7 frame REAL mới pass (auth)
+LIVENESS_MIN_OK  = 4    # cần ít nhất 4/7 frame REAL mới pass (auth)
 MAX_FAILS        = 5
 LOCKOUT_SECS     = 60
 ENROLL_FRAMES    = 10
@@ -44,6 +45,8 @@ class FaceWorker(QThread):
     enroll_progress    = pyqtSignal(int, int)
     face_log           = pyqtSignal(str, str, str)
     no_face_registered = pyqtSignal()
+    camera_error       = pyqtSignal(str)
+    lockout_active     = pyqtSignal(int)   # còn lại bao nhiêu giây bị khóa
 
     def __init__(self, mode: str = "auth", cam_index: int = 0):
         super().__init__()
@@ -55,32 +58,79 @@ class FaceWorker(QThread):
     def run(self):
         self._running = True
 
-        try:
-            from app.utils.session import Session
-            mssv_session = Session.current_user or ""
-        except Exception:
-            mssv_session = ""
+        mssv_session = Session.current_user or ""
 
         user_repo = UserRepository()
         known     = user_repo.get_all_embeddings()
 
-        # ── Check has_face (chỉ auth mode) ───────────────────────────────────
-        if self.mode == "auth" and mssv_session:
+        # ── Verify-mode: đã biết trước tài khoản (mssv_session có sẵn) ────────
+        # Chỉ nên so khớp với ĐÚNG người này, không phải nearest-neighbor toàn
+        # hệ thống — nếu không, người đứng trước camera có thể bị match nhầm
+        # sang MSSV khác (embedding gần người khác hơn), Session.current_user
+        # bị ghi đè sai, và select_mode mở tủ của người khác chứ không phải
+        # tài khoản đang đăng nhập.
+        #
+        # Identify-mode (mssv_session rỗng, vd đăng nhập chỉ bằng khuôn mặt,
+        # chưa biết trước là ai) vẫn giữ nguyên nearest-neighbor trên toàn bộ
+        # `known` như cũ.
+        verify_mode = self.mode == "auth" and bool(mssv_session)
+
+        # ── Khóa xác thực (MAX_FAILS) — kiểm tra TRƯỚC KHI mở camera ──────────
+        # Lưu ở Session (không phải biến local) nên vẫn còn hiệu lực dù người
+        # dùng bấm "Quay lại" rồi chọn "Nhận diện" lại — không bị mất khóa.
+        if self.mode == "auth":
+            lockout_key       = mssv_session or "__anonymous__"
+            remaining_lockout = Session.get_face_lockout_remaining(lockout_key)
+            if remaining_lockout > 0:
+                self.lockout_active.emit(int(remaining_lockout) + 1)
+                self._running = False
+                return
+
+        if verify_mode:
             user = user_repo.find_user(mssv_session)
             if not (user and user["has_face"]):
                 self.no_face_registered.emit()
                 self._running = False
                 return
 
+            known = [item for item in known if item[0] == mssv_session]
+            if not known:
+                self.no_face_registered.emit()
+                self._running = False
+                return
+
         # Bật camera với IR
         self._camera.start(use_ir=True)
-        time.sleep(0.5)
+
+        # Chờ tối đa CAMERA_START_TIMEOUT giây để camera thật sự mở được.
+        # Trước đây chỉ time.sleep(0.5) rồi vào thẳng while loop — nếu camera
+        # mở lỗi (VD: đang bị phiên trước giữ độc quyền do race condition khi
+        # ẩn/hiện màn hình nhanh, group không tìm thấy, driver lỗi...) thì
+        # color/ir mãi mãi là None, loop cứ spin im lặng, UI kẹt ở "Đang phân
+        # tích..." vô thời hạn mà không ai biết vì sao.
+        CAMERA_START_TIMEOUT = 5.0
+        t0 = time.time()
+        got_frame = False
+        while self._running and (time.time() - t0) < CAMERA_START_TIMEOUT:
+            if not self._camera.is_active:
+                break
+            color, ir = self._camera.get()
+            if color is not None or ir is not None:
+                got_frame = True
+                break
+            time.sleep(0.05)
+
+        if not got_frame:
+            err = self._camera.error or "Camera không phản hồi (hết thời gian chờ)"
+            self.camera_error.emit(err)
+            self._running = False
+            self._camera.stop()
+            return
 
         liveness_window   = deque(maxlen=LIVENESS_WINDOW)
         confirm_count     = 0
         last_match_mssv   = None
         fail_count        = 0
-        lockout_until     = 0.0
         enroll_embeddings = []
 
         try:
@@ -157,7 +207,6 @@ class FaceWorker(QThread):
                     if len(enroll_embeddings) >= ENROLL_FRAMES:
                         avg_emb = np.mean(enroll_embeddings, axis=0)
                         try:
-                            from app.utils.session import Session
                             self.face_log.emit(
                                 Session.current_user or "unknown",
                                 "FACE_REGISTER",
@@ -210,11 +259,10 @@ class FaceWorker(QThread):
                         f"dist={best_dist:.3f} fail={fail_count}"
                     )
                     if fail_count >= MAX_FAILS:
-                        lockout_until = time.time() + LOCKOUT_SECS
-                        fail_count    = 0
-                        self.auth_failed.emit(
-                            f"❌ Thử sai {MAX_FAILS} lần — khóa {LOCKOUT_SECS}s"
-                        )
+                        lockout_key = mssv_log or "__anonymous__"
+                        Session.set_face_lockout(lockout_key, LOCKOUT_SECS)
+                        self.lockout_active.emit(LOCKOUT_SECS)
+                        break
                     else:
                         self.auth_failed.emit(
                             f"Không nhận ra khuôn mặt (còn {MAX_FAILS - fail_count} lần)"

@@ -65,15 +65,15 @@ class ChangePassController(QMainWindow):
         self.old_pass.installEventFilter(self)
         self.new_pass.installEventFilter(self)
         self.verifi_pass.installEventFilter(self)
-        self.back_begin.clicked.connect(self.go_to_nextcam)
+        self.back_begin.clicked.connect(self.go_to_login)
         self.register_b.clicked.connect(self.change_pass)
 
     def go_to_nextcam(self):
         QTimer.singleShot(150, lambda: (self.reset_form(), self.stacked_widget.setCurrentIndex(PAGES["next_cam"])))
-        self.reset_form()
+        
 
     def go_to_login(self):
-        self.stacked_widget.setCurrentIndex(PAGES["login"])
+        QTimer.singleShot(150, lambda: self.stacked_widget.setCurrentIndex(PAGES["login"]))
         self.reset_form()
 
 

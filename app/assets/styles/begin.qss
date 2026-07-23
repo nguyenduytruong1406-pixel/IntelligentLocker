@@ -92,3 +92,432 @@ QPushButton#service_button:checked {
     font-family: 'Segoe UI', sans-serif;
     qproperty-alignment: AlignCenter;
 }
+
+
+/* ================= MESSAGE BOX ================= */
+QMessageBox {
+    background-color: #f5f5f5;
+    font-size: 14px;
+}
+
+QMessageBox QLabel {
+    color: #212121;
+    font-size: 14px;
+}
+
+QMessageBox QPushButton {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00897B, stop:1 #00695C
+    );
+    color: white;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 8px 20px;
+    min-width: 80px;
+}
+
+QMessageBox QPushButton:pressed {
+    background: #004D40;
+}
+
+
+/* ================= BACK BUTTON ( BEGIN.UI ) ================= */
+/* ===== Style DÙNG CHUNG cho cả 2 nút (bo góc, font, padding...) ===== */
+QPushButton[class="BackButton"] {
+    border-radius: 10px;
+    font-weight: bold;
+    font-size: 14px;
+    padding: 12px;
+    border: none;
+}
+
+/* ===== Nút BACK — màu trắng/nhạt ===== */
+QPushButton#back_login {
+    background-color: #b5c1c3;
+    color: #333333;
+    border: 1px solid #393e46;
+}
+QPushButton#back_login:hover {
+    background-color: #5b6371;
+}
+QPushButton#back_login:checked,
+QPushButton#back_login:pressed {
+    background-color: #3b3f47;   /* màu khi nhấn — khác với NEXT */
+    border: 1px solid #282c33;
+}
+
+/* ===== Nút NEXT — màu navy/gold ===== */
+QPushButton#next_login {
+    background-color: #163372;
+    color: #FFFFFF;
+    border: 1px solid #D4AF37;
+}
+QPushButton#next_login:hover {
+    background-color: #1B2A6B;
+}
+QPushButton#next_login:checked,
+QPushButton#next_login:pressed {
+    background-color: #0F1730;   /* màu khi nhấn — khác với BACK */
+    border: 1px solid #D4AF37;
+}
+
+QFrame#login{
+    background-color: #cfdcde;
+    border-radius: 8px;
+}
+
+
+
+
+/* ===== Meseage box support ===== */
+QPushButton#closeButton_sp {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+    stop:0 #00897B, stop:1 #00695C
+    );
+    color: white;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 10px;
+}
+QPushButton#closeButton_sp:pressed {
+    background: #004D40;
+}
+
+
+
+
+/* ===================================================================*/
+/* ========================= SELECT AUTH METHOD ======================*/
+/* ===================================================================*/
+
+QPushButton#recog_select_b,
+QPushButton#pass_select_b {
+    background-color: #FFFFFF;
+    border: 2px solid #14213D;      /* viền navy đậm, thấy ngay từ đầu */
+    border-radius: 16px;
+    min-width: 220px;
+    min-height: 200px;
+}
+
+QPushButton#recog_select_b:hover,
+QPushButton#pass_select_b:hover {
+    border: 2px solid #1B2A6B;      /* hover: navy sáng hơn 1 chút */
+    background-color: #FAFBFF;
+}
+
+QPushButton#recog_select_b:checked,
+QPushButton#pass_select_b:checked {
+    border: 3px solid #324e79;      /* chọn: viền dày hơn, màu vàng nổi bật */
+    background-color: #FFFDF5;
+}
+
+QLabel#card_title {
+    font-size: 30px;
+    font-weight: 700;
+    color: #14213D;
+    background: transparent;
+}
+
+QLabel#card_subtitle {
+    font-size: 25px;
+    color: #6B7280;
+    background: transparent;
+}
+
+QWidget#widget_auth{
+    background-color: #92a0bb;
+}
+
+
+
+
+
+/* ===================================================================*/
+/* ============================ SEND OTP =============================*/
+/* ===================================================================*/
+
+/* ================= BACK BUTTON ( SEND_OTP.UI ) ================= */
+/* ===== Style DÙNG CHUNG cho cả 2 nút (bo góc, font, padding...) ===== */
+QPushButton[class="BackButton_SEND_OTP"] {
+    border-radius: 10px;
+    font-weight: bold;
+    font-size: 14px;
+    padding: 12px;
+    border: none;
+}
+
+/* ===== Nút BACK — màu trắng/nhạt ===== */
+QPushButton#back_auth_b {
+    background-color: #b5c1c3;
+    color: #333333;
+    border: 1px solid #393e46;
+}
+QPushButton#back_auth_b:hover {
+    background-color: #5b6371;
+}
+QPushButton#back_auth_b:checked,
+QPushButton#back_auth_b:pressed {
+    background-color: #3b3f47;   /* màu khi nhấn — khác với NEXT */
+    border: 1px solid #282c33;
+}
+
+/* ===== Nút NEXT — màu navy/gold ===== */
+QPushButton#semail_b {
+    background-color: #163372;
+    color: #FFFFFF;
+    border: 1px solid #D4AF37;
+}
+QPushButton#semail_b:hover {
+    background-color: #1B2A6B;
+}
+QPushButton#semail_b:checked,
+QPushButton#semail_b:pressed {
+    background-color: #0F1730;   /* màu khi nhấn — khác với BACK */
+    border: 1px solid #D4AF37;
+}
+
+
+QWidget#frame_otp{
+    background-color: #a1b0cd;
+    border-radius: 8px;
+}
+
+
+/* ===================================================================*/
+/* ============================ SELECT MODE ==========================*/
+/* ===================================================================*/
+
+QPushButton#lay_do,
+QPushButton#tra_tu {
+    background-color: #FFFFFF;
+    border: 2px solid #14213D;      /* viền navy đậm, thấy ngay từ đầu */
+    border-radius: 16px;
+    min-width: 220px;
+    min-height: 200px;
+}
+
+QPushButton#lay_do:hover,
+QPushButton#tra_tu:hover {
+    border: 2px solid #1B2A6B;      /* hover: navy sáng hơn 1 chút */
+    background-color: #FAFBFF;
+}
+
+QPushButton#lay_do:checked,
+QPushButton#tra_tu:checked {
+    border: 3px solid #324e79;      /* chọn: viền dày hơn, màu vàng nổi bật */
+    background-color: #FFFDF5;
+}
+
+QLabel#card_title {
+    font-size: 30px;
+    font-weight: 700;
+    color: #14213D;
+    background: transparent;
+}
+
+QLabel#card_subtitle {
+    font-size: 25px;
+    color: #6B7280;
+    background: transparent;
+}
+
+QWidget#widget_auth{
+    background-color: #92a0bb;
+}
+
+
+
+
+
+
+/* ===================================================================*/
+/* ============================ ENTER OTP ============================*/
+/* ===================================================================*/
+
+/*================== Background ===============*/
+
+
+QLabel#enter_otp_title {   /* đổi đúng objectName thật của label "NHẬP MÃ OTP" */
+    font-size: 26px;
+    font-weight: 700;
+    color: #14213D;
+    min-height: 50px;      /* thêm khoảng đệm để không cắt dấu */
+    padding-top: 6px;
+}
+
+/* ===== 4 ô hiển thị PIN ===== */
+QLabel#l1, QLabel#l2, QLabel#l3, QLabel#l4 {
+    border: none;
+    background: transparent;
+    font-size: 28px;
+    font-weight: 700;
+    color: #14213D;
+    qproperty-alignment: AlignCenter;
+    min-width: 60px;
+    min-height: 50px;
+}
+
+/* Số đã nhập: navy đậm. Số chưa nhập: xám nhạt */
+QLabel#l1[pinState="filled"],
+QLabel#l2[pinState="filled"],
+QLabel#l3[pinState="filled"],
+QLabel#l4[pinState="filled"] {
+    color: #14213D;
+}
+
+QLabel#l1[pinState="empty"],
+QLabel#l2[pinState="empty"],
+QLabel#l3[pinState="empty"],
+QLabel#l4[pinState="empty"] {
+    color: #C7CBD3;
+}
+
+/* ===== Numpad số 0-9 ===== */
+QPushButton#b0, QPushButton#b1, QPushButton#b2, QPushButton#b3, QPushButton#b4,
+QPushButton#b5, QPushButton#b6, QPushButton#b7, QPushButton#b8, QPushButton#b9 {
+    background-color: #858d9b;
+    color: #14213D;
+    border: none;
+    border-radius: 10px;
+    font-size: 20px;
+    font-weight: 600;
+    min-width: 80px;
+    min-height: 80px;
+}
+
+/* ===== Nút Xóa ===== */
+QPushButton#clear_b {
+    background-color: #14213D;
+    color: #FFFFFF;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* ===== Nút Xác nhận (CTA chính) ===== */
+QPushButton#enter_b {
+    background-color: #D4AF37;
+    color: #14213D;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+/* ===== Khối đếm ngược (nếu bọc time_label trong 1 QFrame) ===== */
+QFrame#countdown_frame {
+    background-color: #14213D;
+    border-radius: 16px;
+}
+
+QLabel#title_otp{
+    color: #FFFFFF;
+    font-size: 28px;
+    font-weight: 700;
+    background: transparent;
+}
+
+QLabel#chua_nhan {
+    color: #C9D1DC;
+    font-size: 22px;
+    background: transparent;
+}
+
+QLabel#vui_long {
+    color: #C9D1DC;
+    font-size: 18px;
+    background: transparent;
+}
+
+
+QLabel#resend_hint {
+    color: #9AA5C4;
+    font-size: 12px;
+    background: transparent;
+}
+
+QPushButton#send_email {
+    background-color: transparent;
+    color: #D4AF37;
+    font-weight: 700;
+    border: none;
+    text-decoration: underline;
+}
+
+/*====================== frame time ============*/
+
+#frame_time {
+    background-color: #3157aa;
+    border-radius: 12px;
+    padding: 10px;
+}
+
+
+QLabel#clock_icon {
+    background: transparent;
+}
+
+QLabel#time_label_otp {
+    color: #D4AF37;
+    font-size: 35px;
+    font-weight: 700;
+    background: transparent;
+}
+
+QLabel#countdown_hint {
+    color: #8A93AC;
+    font-size: 20px;
+    background: transparent;
+}
+
+/*====================== frame enter ============*/
+
+QWidget#frame_enter {
+    background-color: #FFFFFF;
+    border: 2px solid #14213D;
+    border-radius: 12px;
+    min-height: 70px;
+    padding: 10px;
+}
+
+
+
+
+
+
+/* ===================================================================*/
+/* ============================ NEXT CAM ============================*/
+/* ===================================================================*/
+
+
+
+/* ================= BACK BUTTON ( NEXTCAM.UI ) ================= */
+/* ===== Style DÙNG CHUNG cho cả 2 nút (bo góc, font, padding...) ===== */
+QPushButton[class="BackButton_NEXTCAM"] {
+    border-radius: 10px;
+    font-weight: bold;
+    font-size: 14px;
+    padding: 12px;
+    border: none;
+}
+
+
+/* ===== Nút NEXT — màu navy/gold ===== */
+QPushButton#next_cam_b {
+    background-color: #163372;
+    color: #FFFFFF;
+    border: 1px solid #D4AF37;
+}
+QPushButton#next_cam_b:hover {
+    background-color: #1B2A6B;
+}
+QPushButton#next_cam_b:checked,
+QPushButton#next_cam_b:pressed {
+    background-color: #0F1730;   /* màu khi nhấn — khác với BACK */
+    border: 1px solid #D4AF37;
+}
+
+

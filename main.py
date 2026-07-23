@@ -42,14 +42,17 @@ from app.controllers.auth_method_controller     import AuthMethodController
 from app.controllers.face_controller            import FaceController
 from app.controllers.select_mode                import SelectModeController
 
+
 # ── Các trang mới lấy từ SML ──────────────────────────────────────────────────
 from app.controllers.change_password_controller import ChangePassController
-from app.controllers.next_cam_controller         import NextCamController
-from app.controllers.QR_controller               import QRController
-from app.controllers.cleanup_worker              import CleanupWorker
-
+from app.controllers.next_cam_controller        import NextCamController
+from app.controllers.QR_controller              import QRController
+from app.controllers.cleanup_worker             import CleanupWorker
+from app.controllers.send_otp_controller        import SendEmailController
+from app.controllers.enter_otp_controller       import EnterOtpController
 from app.services.cleanup_service import CleanupService
 from app.nav import PAGES
+
 
 
 app = QApplication(sys.argv)
@@ -107,7 +110,8 @@ video_page       = VideoScreenController(stacked_widget)
 auth_method_page = AuthMethodController(stacked_widget)
 face_page        = FaceController(stacked_widget, mode="auth", cam_index=0)
 select_mode_page = SelectModeController(stacked_widget, loading_page, success_page)
-
+sendOTP_page     = SendEmailController(stacked_widget)
+enterOTP_page    = EnterOtpController(stacked_widget)
 # Trang mới từ SML
 change_pass_page = ChangePassController(stacked_widget, loading_page, success_page)
 nextcam_page     = NextCamController(stacked_widget)
@@ -129,6 +133,8 @@ add_page("select_mode", select_mode_page)
 add_page("change_pass", change_pass_page)
 add_page("next_cam",    nextcam_page)
 add_page("qr_code",     QR_page)
+add_page("Send_OTP",   sendOTP_page)
+add_page("Enter_OTP", enterOTP_page)
 
 print("[main] PAGES index map:", PAGES)
 
@@ -165,7 +171,7 @@ timer_cleanup.start(60_000)
 # ── Window ────────────────────────────────────────────────────────────────────
 stacked_widget.setFixedSize(1024, 600)
 stacked_widget.setCurrentIndex(PAGES["video"])   # bắt đầu từ màn hình video
-stacked_widget.show()
+stacked_widget.showFullScreen()
 
 
 # ── Thoát app: connect on_quit TRƯỚC khi gọi app.exec(), và chỉ gọi 1 LẦN ────

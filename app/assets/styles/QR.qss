@@ -1,0 +1,5 @@
+/* ===== Khối main ===== */
+QTextBrowser#khung_tb {
+    background-color: #2a3349;
+    border-radius: 16px;
+}

@@ -136,7 +136,7 @@ class LockerRepository:
                 )
                 self._insert_log(conn, locker_id, mssv, "RETURN", name)
                 conn.execute(
-                    "UPDATE Users SET last_active_time = ? WHERE mssv = ?",
+                    "UPDATE Users SET last_active_time = ?, account_status = 'DONE' WHERE mssv = ?",
                     (now, mssv)
                 )
                 # Ghi LOCKER_DELETE_LOG (IntelligentLocker standard)

@@ -1,170 +1,110 @@
-/* =========================
-AVAILABLE
-========================= */
+/* ===== Tiêu đề ===== */
+QLabel#title_smart_locker {
+    font-family: "Segoe UI", "Arial";
+    font-size: 30px;
+    font-weight: 700;
+    color: #14213D;
+}
+
+/* ===== Khối main ===== */
+QWidget#main {
+    background-color: #dfe2e9;
+    border-radius: 10px;
+}
+
+/* ===== Khối sidebar ===== */
+QWidget#sider_bar {
+    background-color: #14213D;
+    border-radius: 10px;
+}
+
+/* ===== Sidebar buttons ===== */
+QPushButton#chua_dk,
+QPushButton#da_dk,
+QPushButton#ho_tro {
+    background-color: #abbbdf;
+    color: #110707;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: left;
+    padding: 14px 16px;
+}
+
+QPushButton#chua_dk:hover,
+QPushButton#da_dk:hover,
+QPushButton#ho_tro:hover {
+    background-color: #abbbdf;
+}
+
+QPushButton#chua_dk:checked,
+QPushButton#da_dk:checked,
+QPushButton#ho_tro:checked {
+    background-color: #abbbdf;
+}
+
+/* ===== Khối đồng hồ ===== */
+QWidget#clock_frame {
+    background-color: #29216e;
+    border-radius: 10px;
+}
+QLabel#time_label {
+    color: #bfc9e0;
+    font-size: 22px;
+    font-weight: 700;
+}
+QLabel#date_label {
+    color: #dfeff1;
+    font-size: 12px;
+}
+
+/* ===== Nút tủ — TRỐNG (available) ===== */
 QPushButton[lockerState="available"] {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #ffffff,
-        stop:1 #e0f2f1
-    );
-    color: #00796B;
-    border: 2px solid #00796B;
-    border-radius: 16px;
-    font-family: 'Segoe UI', sans-serif;
-    font-weight: bold;
-    font-size: 18px;
-    letter-spacing: 0.5px;
+    background-color: #8cbd97;
+    border: 2px solid #0d4923;
+    border-radius: 12px;
+    color: #166534;
+    font-size: 16px;
+    font-weight: 700;
+}
+QPushButton[lockerState="available"]:hover {
+    background-color: #F0FDF4;
 }
 
-QPushButton[lockerState="available"]:pressed,
-QPushButton[lockerState="available"]:checked {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #b2dfdb,
-        stop:1 #80cbc4
-    );
-    padding-top: 4px;
-}
-
-
-/* =========================
-BUSY
-========================= */
+/* ===== Nút tủ — ĐANG DÙNG (busy) ===== */
 QPushButton[lockerState="busy"] {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #ef5350,
-        stop:1 #e53935
-    );
-    color: white;
-    border: 2px solid #c62828;
-    border-radius: 16px;
-    font-family: 'Segoe UI', sans-serif;
-    font-weight: bold;
-    font-size: 18px;
-    letter-spacing: 0.5px;
+    background-color: #e41212;
+    border: none;
+    border-radius: 12px;
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 700;
 }
 
-QPushButton[lockerState="busy"]:pressed,
-QPushButton[lockerState="busy"]:checked {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #c62828,
-        stop:1 #b71c1c
-    );
-    padding-top: 4px;
-}
-
-
-/* =========================
-SELECTED
-========================= */
-QPushButton[lockerState="selected"] {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #66bb6a,
-        stop:1 #43a047
-    );
-    color: white;
-    border: 2px solid #2e7d32;
-    border-radius: 16px;
-    font-family: 'Segoe UI', sans-serif;
-    font-weight: bold;
-    font-size: 18px;
-    letter-spacing: 0.5px;
-}
-
-QPushButton[lockerState="selected"]:pressed,
-QPushButton[lockerState="selected"]:checked {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #2e7d32,
-        stop:1 #1b5e20
-    );
-    padding-top: 4px;
-}
-
-
-/* =========================
-MY LOCKER
-========================= */
-QPushButton[lockerState="mylocker"] {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #FFD600,
-        stop:1 #F9A825
-    );
-    color: #212121;
-    border: 2px solid #F57F17;
-    border-radius: 16px;
-    font-family: 'Segoe UI', sans-serif;
-    font-weight: bold;
-    font-size: 18px;
-    letter-spacing: 0.5px;
-}
-
-QPushButton[lockerState="mylocker"]:pressed,
-QPushButton[lockerState="mylocker"]:checked {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #F9A825,
-        stop:1 #F57F17
-    );
-    padding-top: 4px;
-}
-
-
-/* =========================
-MAINTENANCE
-========================= */
+/* ===== Nút tủ — BẢO TRÌ (maintenance) ===== */
 QPushButton[lockerState="maintenance"] {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #FFA726,
-        stop:1 #FB8C00
-    );
-    color: white;
-    border: 2px solid #E65100;
-    border-radius: 16px;
-    font-family: 'Segoe UI', sans-serif;
-    font-weight: bold;
-    font-size: 18px;
-    letter-spacing: 0.5px;
+    background-color: #d18c14;
+    border: none;
+    border-radius: 12px;
+    color: #7C2D12;
+    font-size: 16px;
+    font-weight: 700;
 }
 
-QPushButton[lockerState="maintenance"]:pressed,
-QPushButton[lockerState="maintenance"]:checked {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #E65100,
-        stop:1 #BF360C
-    );
-    padding-top: 4px;
-}
-/* =========================
-MAINTENANCE SELECTED
-========================= */
-QPushButton[lockerState="maintenance_selected"] {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #FB8C00,
-        stop:1 #E65100
-    );
-    color: white;
-    border: 2px solid #BF360C;
-    border-radius: 16px;
-    font-family: 'Segoe UI', sans-serif;
-    font-weight: bold;
-    font-size: 18px;
-    letter-spacing: 0.5px;
-}
 
-QPushButton[lockerState="maintenance_selected"]:pressed,
-QPushButton[lockerState="maintenance_selected"]:checked {
-    background: qlineargradient(
-        x1:0, y1:0, x2:0, y2:1,
-        stop:0 #E65100,
-        stop:1 #BF360C
-    );
-    padding-top: 4px;
+/* ===== Khung chú thích ===== */
+QGroupBox#chu_thich {
+    border: 1px solid #D8DCE3;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #14213D;
+    margin-top: 10px;
+}
+QGroupBox#chu_thich::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+    color: #14213D;
+    font-weight: 600;
 }

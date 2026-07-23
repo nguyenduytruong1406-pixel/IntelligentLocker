@@ -6,13 +6,13 @@ Hoạt động ở 2 chế độ:
   • mode="register" — đăng ký khuôn mặt mới (sau khi admin duyệt)
 
 Luồng (auth):
-  AuthMethodController → [recog_select] → FaceController (index 15)
-  FaceController       → auth OK        → SelectModeController (index 3)
-  FaceController       → back           → AuthMethodController (index 8)
+  AuthMethodController → [recog_select] → FaceController (PAGES["face"])
+  FaceController       → auth OK        → SelectModeController (PAGES["select_mode"])
+  FaceController       → back           → AuthMethodController (PAGES["auth_method"])
 
 Luồng (register):
-  RegisterController / profile → FaceController(mode="register")
-  FaceController → capture OK  → về Begin (index 0)
+  AuthMethodController → FaceController(mode="register")
+  FaceController → capture OK  → về Begin (PAGES["begin"])
 
 Không dùng .ui file — build layout 100% bằng code (không phụ thuộc Qt Designer).
 """
@@ -33,6 +33,7 @@ from app.controllers.face_worker import FaceWorker
 from app.utils.session           import Session
 from app.services.auth_service   import AuthService
 from app.database.user_repository import UserRepository
+from app.devices.esp32_locker    import ESP32LockerClient
 from app.nav                      import PAGES
 
 
@@ -69,6 +70,7 @@ class FaceController(QMainWindow):
         self.mode           = mode
         self.cam_index      = cam_index
         self.auth_service   = AuthService()
+        self.esp32          = ESP32LockerClient()
         self._worker: FaceWorker | None = None
 
         self._build_ui()
@@ -172,6 +174,9 @@ class FaceController(QMainWindow):
     def hideEvent(self, event):
         super().hideEvent(event)
         self._stop_worker()
+        # Tắt đèn hỗ trợ nhận diện mỗi khi RỜI trang này — dù là do nhận diện
+        # thành công (chuyển sang SelectMode) hay do bấm quay lui/về Home.
+        self.esp32.send_light(False)
 
     def set_mode(self, mode: str):
         """
@@ -204,6 +209,8 @@ class FaceController(QMainWindow):
         self._worker.enroll_progress.connect(self._on_enroll_progress)
         self._worker.face_log.connect(self._on_face_log)
         self._worker.no_face_registered.connect(self._on_no_face_registered)
+        self._worker.camera_error.connect(self._on_camera_error)
+        self._worker.lockout_active.connect(self._on_lockout_active)
         self._worker.start()
 
     def _stop_worker(self):
@@ -263,6 +270,26 @@ class FaceController(QMainWindow):
         """Match thất bại — hiển thị lý do, không dừng worker (tiếp tục quét)."""
         self._set_status(reason, _DANGER)
 
+    @pyqtSlot(int)
+    def _on_lockout_active(self, remaining: int):
+        """Đã khóa xác thực khuôn mặt (quá MAX_FAILS lần, hoặc quay lại trang
+        này trong lúc vẫn còn khóa từ trước — khóa được lưu ở Session nên
+        không bị mất khi bấm 'Quay lại'). Dừng camera và tự quay về màn chọn
+        hình thức xác thực, không ngồi chờ vô thời hạn ở trang camera."""
+        self._stop_worker()
+        self.btn_retry.setVisible(False)
+        self._set_status(
+            f"🔒 Đã khóa xác thực khuôn mặt — thử lại sau {remaining}s", _DANGER
+        )
+        QTimer.singleShot(1800, self._on_back)
+
+    @pyqtSlot(str)
+    def _on_camera_error(self, reason: str):
+        """Camera không mở được (khác với auth_failed — worker đã dừng hẳn,
+        cần người dùng bấm Thử lại chứ không tự quét tiếp)."""
+        self._set_status(f"❌ Không mở được camera: {reason}", _DANGER)
+        self.btn_retry.setVisible(True)
+
     @pyqtSlot(int, int)
     def _on_enroll_progress(self, current: int, total: int):
         """Cập nhật tiến độ thu thập frame khi đăng ký."""
@@ -319,14 +346,14 @@ class FaceController(QMainWindow):
 
     def _go_to_begin(self):
         self._stop_worker()
-        self.stacked_widget.setCurrentIndex(0)
+        self.stacked_widget.setCurrentIndex(PAGES["begin"])
 
     def _on_back(self):
         self._stop_worker()
         if self.mode == "register":
-            self.stacked_widget.setCurrentIndex(0)
+            self.stacked_widget.setCurrentIndex(PAGES["begin"])
         else:
-            self.stacked_widget.setCurrentIndex(8)  # AuthMethodController
+            self.stacked_widget.setCurrentIndex(PAGES["auth_method"])
 
     # ── Helper ────────────────────────────────────────────────────────────────
 

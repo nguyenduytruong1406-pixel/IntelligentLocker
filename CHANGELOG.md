@@ -4,50 +4,43 @@ Toàn bộ lịch sử thay đổi theo ngày, mới nhất ở trên.
 
 ---
 
-## [15/07/2026] — Bỏ hẳn "chờ duyệt", fallback gửi mật khẩu qua EmailJS, đồng bộ `is_first_login`, vá loạt bug sync tủ
+## [22/07/2026] — Fix lockout xác thực khuôn mặt không có tác dụng
 
-### 🌐 Web Admin (`index.html`)
+### 🐛 Bug: quá `MAX_FAILS` lần vẫn không bị khóa thật
 
-**Fallback gửi mật khẩu qua EmailJS khi Kiosk offline:**
-- Trước đây tài khoản + mật khẩu chỉ gửi được qua `/pending_credentials` → `sync_listener.py` (yêu cầu Kiosk online). Nếu Kiosk offline lúc admin duyệt đơn, mật khẩu **không đến được** sinh viên.
-- Thêm nhánh dự phòng: nếu `kiosk_status.last_seen` quá 90s → gửi thẳng qua EmailJS từ trình duyệt admin (`emailjs.send()`), dùng template riêng (`templateIdCredentials`, khác template OTP).
-- Ghi log audit vào node mới `/credential_email_log/{mssv}` (`sent_via`, `sent_at`) — **không** dùng lại `/pending_credentials` nên `sync_listener.py` không đọc/gửi trùng khi Kiosk online lại.
-- Nếu cả 2 đường đều fail (EmailJS cũng lỗi) → rơi lại `/pending_credentials` làm backstop cuối.
-- Tab "Đơn Đăng Ký" thêm cột **"Gửi Mail"** hiển thị realtime: `📡 Chờ Kiosk gửi` / `✉️ Đã gửi (EmailJS)` — admin biết chắc email đã đi, không còn tình trạng "duyệt xong không biết có gửi được không".
+**Vấn đề:** `lockout_until = time.time() + LOCKOUT_SECS` được gán trong `run()` nhưng **không có chỗ nào đọc lại biến này** — vòng lặp `while self._running` tiếp tục quét ngay lập tức sau khi reset `fail_count = 0`. Sinh viên thấy thông báo "khóa 60s" nhưng thực chất camera vẫn nhận diện bình thường không giới hạn số lần thử.
 
-**Bỏ hẳn tính năng "chờ duyệt" (`is_approved`):**
-- Xóa card "Chờ duyệt", nút "Duyệt thẻ/Khóa thẻ" trong tab Sinh Viên, cột "Trạng Thái" trong bảng + modal chi tiết + CSV export.
-- Xóa cấu hình "Tự xóa thẻ chờ duyệt sau N ngày" trong Settings modal + hàm `autoExpirePendingCards()` (không còn khái niệm tài khoản "chờ duyệt" nữa — tài khoản chỉ tồn tại khi admin đã tạo trực tiếp, luôn active ngay).
-- **`confirmApproveAccount()` không còn ghi field `is_approved` khi tạo tài khoản mới** — thay bằng `is_first_login:true` (đánh dấu tài khoản dùng mật khẩu do admin cấp, chưa tự đổi).
-- Card thống kê "Sinh viên đã duyệt" → đổi thành **"Tổng sinh viên"** (đếm tổng, vì is_approved không còn tồn tại).
+**Thêm nữa:** vì trạng thái khóa chỉ là biến local trong `run()`, bấm "Quay lại" (hủy `FaceWorker` cũ, tạo worker mới khi vào lại) làm mất luôn trạng thái khóa — có thể né hoàn toàn bằng cách thoát ra vào lại.
 
-**Chuông thông báo góc phải — đổi mục đích hoàn toàn:**
-- Không còn liên quan "chờ duyệt sinh viên" (tính năng đã bỏ). Giờ chỉ hiện **1 chấm đỏ** (không số) khi có yêu cầu trả tủ đang chờ HOẶC đơn đăng ký mới đang chờ cấp tài khoản — click từng mục nhảy thẳng tới tab tương ứng.
-- Bỏ hẳn badge số ở mục "Nhật Ký" (trước đây luôn hiện sai số dù chưa có log mới — do logic đếm bị lỗi ngay từ đầu, quyết định bỏ badge thay vì vá).
+### ✅ Fix — lưu khóa ở `Session`, dừng hẳn worker thay vì chờ tại chỗ
 
-**Ghi log khi gán tủ mới (`new_assignment`):** `confirmApproveAccount()` và `confirmAssignLocker()` giờ đều push thêm 1 entry vào `/locker_delete_logs` với `reason:'new_assignment'` mỗi khi gán tủ — phục vụ so sánh thời gian trong `sync_tool.py` (xem phần Kiosk bên dưới) để phân biệt "tủ vừa gán lại hợp lệ" với "tủ còn sót lại state cũ chưa dọn".
+**`app/utils/session.py`** — thêm store khóa theo mssv, sống ngoài vòng đời của `FaceWorker`:
+```python
+face_lockout = {}   # mssv -> timestamp hết khóa
 
-> ⚠️ **Cần theo dõi:** `delete_time` trong `locker_delete_logs` cần **thống nhất định dạng ISO sortable** (`YYYY-MM-DD HH:MM:SS`) ở TẤT CẢ các chỗ ghi, vì `sync_tool.py` giờ so sánh `assigned_date` với `delete_time` bằng string so sánh trực tiếp — 2 chỗ (`deleteUserCard()`, `handleRelease()`) hiện đang dùng lại `toLocaleString('vi-VN')` (không sort được), cần đổi về `toISOString().slice(0,19).replace('T',' ')` để tránh vá lại đúng bug `[FIX LOCKER]` bên dưới.
+@classmethod
+def get_face_lockout_remaining(cls, mssv): ...   # giây còn lại, 0 nếu không khóa
 
-### 🖥 Kiosk (Python)
+@classmethod
+def set_face_lockout(cls, mssv, seconds): ...    # ghi thời điểm hết khóa
+```
+Không xóa `face_lockout` trong `Session.clear()` — nếu không sinh viên có thể né khóa bằng cách logout rồi đăng nhập lại ngay.
 
-**Fix bug thu hồi tủ sót `last_open`/`assigned_date`:** 3 câu SQL (`sync_listener.py::on_user_change`, `sync_tool.py::pull()` và `push()` nhánh `admin_deleted`) khi xóa tài khoản chỉ clear `status` + `current_mssv`, quên `assigned_date`/`last_open` — gây hiển thị sai thông tin gán tủ cũ dù tủ đã trống. Đã đồng nhất cả 3 chỗ.
+**`app/controllers/face_worker.py`:**
+- Thêm signal `lockout_active(int)`.
+- Đầu `run()`, trước khi mở camera: nếu `Session.get_face_lockout_remaining(mssv) > 0` → emit `lockout_active` ngay, không bật camera.
+- Khi `fail_count >= MAX_FAILS`: gọi `Session.set_face_lockout(mssv, LOCKOUT_SECS)`, emit `lockout_active(LOCKOUT_SECS)`, rồi **`break`** thoát hẳn vòng lặp (trước đây chỉ reset `fail_count` rồi quét tiếp).
 
-**Đồng bộ 2 chiều `is_first_login`:**
-- `sync_listener.py::on_user_change` + `sync_tool.py::pull()`: đọc `is_first_login` từ Firebase, merge với SQLite (Firebase chỉ override khi có giá trị rõ ràng — Kiosk vẫn là nguồn xác thực chính vì field này đổi khi sinh viên tự đổi mật khẩu tại Kiosk).
-- `sync_tool.py::push()`: đẩy `is_first_login` lên Firebase cả khi tạo mới lẫn khi update diff.
-- (`firebase_hooks.py::push_password_changed()` đã tự set `is_first_login=False` sẵn từ trước — không cần sửa thêm.)
+**`app/controllers/face_controller.py`:**
+- Slot `_on_lockout_active(remaining)`: dừng worker, hiện `🔒 Đã khóa xác thực khuôn mặt — thử lại sau {remaining}s`, rồi `QTimer.singleShot(1800, self._on_back)` tự quay về màn chọn hình thức xác thực thay vì đứng chờ vô thời hạn ở trang camera.
 
-**Fix false-positive `[FIX LOCKER]` trong `sync_tool.py::push()`:** trước đây so khớp `(mssv, locker_id)` với log `student_release` để "tự dọn" SQLite còn sót — nhưng log này **tồn tại vĩnh viễn**, nên khi 1 locker được **gán lại hợp lệ** cho đúng sinh viên đó sau này, sync vẫn tưởng nhầm là "còn sót" và **xóa mất lần gán mới**. Sửa bằng cách so sánh `assigned_date` hiện tại với `delete_time` của lần trả gần nhất — chỉ tự dọn khi `assigned_date` **cũ hơn hoặc bằng** lần trả (thật sự là state cũ), bỏ qua nếu đã gán lại sau đó. Đồng thời ghi log audit `reason:'sync_auto_fix'` mỗi khi tự dọn (trước đây bước này không để lại dấu vết gì).
+**Kết quả:** đủ `MAX_FAILS` lần → khóa thật `LOCKOUT_SECS` giây theo mssv, tự động thoát về màn trước; bấm "Quay lại" rồi chọn "Nhận diện" lại trong lúc còn khóa vẫn bị chặn ngay và hiện đúng số giây còn lại.
 
-**Nối `SelectModeController` vào luồng chính:** `select_mode.py` (màn hình Mở tủ/Trả tủ) trước đây tồn tại nhưng **chưa từng được `main.py` import/đăng ký** — `face_controller.py` điều hướng tới bằng `setCurrentIndex(3)` (số cứng, trỏ sai trang). Đã:
-- Đăng ký `select_mode` vào `PAGES` qua `add_page()` trong `main.py`.
-- Sửa `face_controller.py` dùng `PAGES["select_mode"]` thay vì số cứng.
-- Thêm phím tắt **ESC** trong `select_mode.py` → về màn hình chính (không dùng nút bấm hiển thị — kiosk công khai không nên có nút thoát lộ liễu).
+### 🐛 Fix bổ sung: `UnboundLocalError: cannot access local variable 'Session'`
 
-**Xác nhận: luồng đăng ký + xác thực bằng mật khẩu tại Kiosk đã bị bỏ hẳn.** `RegisterController`, `PassWordController`, `SendEmailController`, `EnterOtpController`, `ServiceController`, `MenuServiceController` không còn được đăng ký trong `main.py`. `AuthMethodController` giờ chỉ còn 1 lựa chọn duy nhất (khuôn mặt) — nút chọn mật khẩu bị ẩn (`pass_select.hide()`) nếu còn sót trong file `.ui`. README mục "Kiosk Stack Index" và sơ đồ "Luồng điều hướng Kiosk" đã cập nhật lại theo đúng `main.py` hiện tại.
+**Vấn đề:** Sau khi thêm `from app.utils.session import Session` ở đầu file (module-level) để dùng cho check lockout, nhánh `register` phía dưới trong `run()` vẫn còn dòng `from app.utils.session import Session` cục bộ (bên trong `try/except`, dùng để ghi `face_log`). Python coi bất kỳ `import` nào bên trong hàm là gán biến local — nên **toàn bộ hàm `run()`** coi `Session` là biến local ngay từ đầu, kể cả trước dòng import đó. Dòng `mssv_session = Session.current_user or ""` ở đầu hàm (đọc `Session` trước khi biến local được gán) → `UnboundLocalError`.
 
-> ⚠️ **Known issue chưa xử lý:** `select_locker_controller.py` (màn hình chọn tủ trống — `SelectLockerController`) hiện **chỉ có file `.pyc` biên dịch sẵn, không có mã nguồn `.py`** trong dự án. Khi sinh viên chưa có tủ, `select_mode.py` gọi `go_to_select_locker()` → `setCurrentIndex(4)` nhưng trang này **chưa được đăng ký vào `PAGES`**, có thể dẫn sai màn hình. Cần cấp lại mã nguồn file này để nối đúng vào `main.py` (tương tự cách đã xử lý với `select_mode.py`).
+**Fix:** xóa import cục bộ thừa trong nhánh `register`, chỉ dùng `Session` đã import ở module-level. Đã xác minh bằng `ast` — không còn `Import`/`ImportFrom` hay gán local nào tên `Session` bên trong `run()`.
 
 ---
 

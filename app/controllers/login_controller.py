@@ -5,8 +5,12 @@ from app.utils.session import Session
 from app.services.auth_service import AuthService
 from app.services.locker_service import LockerService
 from app.widgets.virtual_keyboard import VirtualKeyboard
-from PyQt6.QtCore import QTimer, QEvent, Qt
+from PyQt6.QtCore import QTimer, QEvent, Qt, QSize
+from PyQt6.QtGui import QPixmap, QIcon, QAction
 from app.nav import PAGES
+from pathlib import Path
+
+BASE_DIR = Path(__file__).parent.parent  # trỏ về thư mục app/
 
 
 class LoginController(QMainWindow):
@@ -15,7 +19,7 @@ class LoginController(QMainWindow):
 
         super().__init__()
 
-        uic.loadUi("app/ui/LOGIN_08_07.ui", self)
+        uic.loadUi("app/ui/LOGIN_N.ui", self)
         self.stacked_widget = stacked_widget
 
         self.auth_service = AuthService()
@@ -35,6 +39,8 @@ class LoginController(QMainWindow):
         self.back_login.clicked.connect(self.go_to_begin)
         self.next_login.clicked.connect(self.login_account)
 
+        # ===== Icon cho ô nhập =====
+        self._setup_input_icons()
 
 # # 👉 THÊM: Load file QSS riêng cho màn hình này (nếu file main.py chưa load)
 #         try:
@@ -52,7 +58,7 @@ class LoginController(QMainWindow):
             btn.setAutoExclusive(False)
             
             # 👉 MẸO QUAN TRỌNG: Gán class "systemButton" để nút tự động ăn theo file QSS
-            btn.setProperty("class", "systemButton")
+            btn.setProperty("class", "BackButton")
             
             # Ép Qt vẽ lại giao diện để nhận thuộc tính class vừa gán
             # btn.style().unpolish(btn)
@@ -78,7 +84,17 @@ class LoginController(QMainWindow):
             # =======================================================
             # =======================================================
 
+        self.back_login.setIcon(QIcon(str(BASE_DIR / "assets/icon/back.png")))
+        self.back_login.setIconSize(QSize(20, 20))
 
+
+
+    def _setup_input_icons(self):
+        user_action = QAction(QIcon("app/assets/icon/user.png"), "", self.mssv)
+        self.mssv.addAction(user_action, self.mssv.ActionPosition.LeadingPosition)
+
+        lock_action = QAction(QIcon("app/assets/icon/lock.png"), "", self.mat_khau)
+        self.mat_khau.addAction(lock_action, self.mat_khau.ActionPosition.LeadingPosition)
 
     def login_account(self):
 
@@ -136,7 +152,8 @@ class LoginController(QMainWindow):
 
         if locker:
             # Đã có tủ được quản lý cấp sẵn → qua màn thao tác với tủ (mở/trả)
-            QTimer.singleShot(150, lambda: self.open_camera_page())
+
+            QTimer.singleShot(150, lambda: self.auth_method_page())
         else:
             # Luồng "tự chọn tủ" đã bị bỏ — quản lý cấp tài khoản/mật khẩu/tủ
             # ngay khi duyệt đơn đăng ký, nên nếu đăng nhập được mà chưa có tủ
@@ -153,9 +170,9 @@ class LoginController(QMainWindow):
         self.stacked_widget.setCurrentIndex(PAGES["change_pass"])
         self.reset_form()
 
-    def open_camera_page(self):
+    def auth_method_page(self):
         self.reset_form()
-        self.stacked_widget.setCurrentIndex(PAGES["next_cam"])
+        self.stacked_widget.setCurrentIndex(PAGES["auth_method"])
 
     def go_to_begin(self):
         self.stacked_widget.setCurrentIndex(PAGES["begin"])
@@ -194,6 +211,36 @@ class LoginController(QMainWindow):
         self.keyboard.mode = "NUM"
         self.keyboard.build_keyboard()
         self.keyboard.confirm_button = None
+
+
+        img_path = BASE_DIR / "assets/icon/logo.jpg"
+        # print(">>> Đường dẫn ảnh:", img_path)
+        # print(">>> File tồn tại:", img_path.exists())
+        pixmap = QPixmap(str(img_path))
+        # print(">>> Pixmap null?", pixmap.isNull())
+        # print(">>> Pixmap size:", pixmap.size())
+
+        # print(">>> logo_dkt size:", self.logo_dkt.size())
+        # print(">>> logo_dkt visible:", self.logo_dkt.isVisible())
+        # print(">>> logo_dkt parent:", self.logo_dkt.parent())
+
+
+        if not pixmap.isNull():
+            self.logo_dkt.setPixmap(
+                pixmap.scaled(
+                    self.logo_dkt.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            )
+            self.logo_dkt.setVisible(True)   # ép hiện, phòng trường hợp bị set False đâu đó
+            self.logo_dkt.raise_()           # đưa lên trên cùng, phòng bị widget khác đè lên
+
+
+
+
+
+
         super().showEvent(event)
     
     # def hideEvent(self, event):

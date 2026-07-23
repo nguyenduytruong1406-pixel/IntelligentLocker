@@ -24,8 +24,8 @@ class VideoScreenController(QMainWindow):
 
         # ===== PLAYER =====
         self.player = QMediaPlayer()
-        self.audio = QAudioOutput()
-        self.player.setAudioOutput(self.audio)
+        # self.audio = QAudioOutput()
+        # self.player.setAudioOutput(self.audio)
         self.player.setVideoOutput(self.videoWidget)
 
         # ===== LOAD VIDEO =====

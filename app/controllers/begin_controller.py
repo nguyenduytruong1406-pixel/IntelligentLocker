@@ -8,7 +8,7 @@ from app.services.locker_service import LockerService
 from app.widgets.locker_button import LockerButton
 from app.nav import PAGES
 from pathlib import Path
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QPixmap, QIcon, QAction
 from PyQt6.QtCore import QSize
 
 
@@ -19,7 +19,7 @@ class BeginController(QMainWindow):
     def __init__(self, stacked_widget):
         super().__init__()
 
-        uic.loadUi("app/ui/START.ui", self)
+        uic.loadUi("app/ui/START_N.ui", self)
         self.stacked_widget = stacked_widget
         self.locker_service = LockerService()
         self.locker_buttons = []
@@ -172,22 +172,8 @@ class BeginController(QMainWindow):
 
         # ===== NÚT ĐÓNG =====
         close_btn = QPushButton("Đóng")
-        # close_btn.setStyleSheet("""
-        #     QPushButton {
-        #         background: qlineargradient(
-        #             x1:0, y1:0, x2:0, y2:1,
-        #             stop:0 #00897B, stop:1 #00695C
-        #         );
-        #         color: white;
-        #         border-radius: 12px;
-        #         font-size: 16px;
-        #         font-weight: bold;
-        #         padding: 10px;
-        #     }
-        #     QPushButton:pressed {
-        #         background: #004D40;
-        #     }
-        # """)
+        close_btn.setObjectName("closeButton_sp")
+
         close_btn.clicked.connect(dialog.close)
         layout.addWidget(close_btn)
 
@@ -215,6 +201,23 @@ class BeginController(QMainWindow):
     def showEvent(self, event):
         self.load_locker_status()
         self.refresh_timer.start(5000)  # Chạy lại khi vào màn hình
+
+        img_path = BASE_DIR / "assets/icon/logo_ute.jpg"
+        # print(">>> Đường dẫn ảnh:", img_path)
+        # print(">>> File tồn tại:", img_path.exists())
+        pixmap = QPixmap(str(img_path))
+
+        if not pixmap.isNull():
+            self.logo_ute.setPixmap(
+                pixmap.scaled(
+                    self.logo_ute.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            )
+            self.logo_ute.setVisible(True)   # ép hiện, phòng trường hợp bị set False đâu đó
+            self.logo_ute.raise_()           # đưa lên trên cùng, phòng bị widget khác đè lên
+
         super().showEvent(event)
 
 
