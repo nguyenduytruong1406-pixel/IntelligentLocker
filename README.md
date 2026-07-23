@@ -83,11 +83,8 @@ SML/
 │   └── ai_utils.py                      ← liveness(), landmarks(), embedding(), ir_to_bgr()
 │
 ├── public/                              ← Web frontend (giữ nguyên từ backup)
-│   ├── landing.html                     ← Entry point (3 portal)
-│   ├── login.html                       ← Đăng nhập admin
+│   ├── login.html                       ← Đăng nhập admin (entry point)
 │   ├── index.html                       ← Admin dashboard (5 tab)
-│   ├── register.html                    ← Sinh viên đăng ký tài khoản
-│   ├── user-dashboard.html              ← Sinh viên tra cứu tủ + yêu cầu trả tủ (OTP)
 │   ├── emailjs_config.js                ← EmailJS credentials (KHÔNG commit git)
 │   └── 404.html
 │
@@ -277,12 +274,11 @@ Sinh viên ra Kiosk, nhập MSSV → has_face=false → tự động vào luồn
 ### Luồng điều hướng Web
 
 ```
-landing.html
-  ├─► register.html       (sinh viên đăng ký)
-  ├─► login.html          (admin)
-  │     └─► index.html    (dashboard 5 tab)
-  └─► user-dashboard.html (tra cứu tủ, yêu cầu trả tủ)
+login.html (entry point, admin)
+  └─► index.html (dashboard 6 tab)
 ```
+
+> Đăng ký sinh viên đã chuyển sang Google Form + QR tại Kiosk. Landing page 3-portal, `register.html` và `user-dashboard.html` đã bị loại bỏ khỏi luồng chính.
 
 ---
 
@@ -292,11 +288,8 @@ landing.html
 
 | Trang | Mô tả | Auth |
 |---|---|---|
-| `landing.html` | Entry point — điều hướng 3 portal | Không |
-| `login.html` | Đăng nhập admin | Không |
+| `login.html` | Đăng nhập admin (entry point) | Không |
 | `index.html` | Dashboard admin (6 tab) | Bắt buộc |
-| `register.html` | *(Không còn dùng trong luồng chính)* — đăng ký đã chuyển sang Google Form + QR tại Kiosk | Không |
-| `user-dashboard.html` | Tra cứu tủ, idle warning, yêu cầu trả tủ | Không |
 
 ### 6 Tab trong index.html
 
@@ -374,7 +367,7 @@ LOCKER_DELETE_LOG (
 /verify_results/{mssv}           → ok, reason, ts (kiosk → web)
 ```
 
-### Security Rules (cập nhật 09/07/2026)
+### Security Rules (cập nhật 23/07/2026 — siết toàn bộ về `auth != null`)
 
 ```json
 {
@@ -383,31 +376,31 @@ LOCKER_DELETE_LOG (
       ".read": "auth != null",
       ".write": "auth != null",
       "$mssv": {
-        ".read": true,
-        ".write": "auth != null || !data.exists()"
+        ".read": "auth != null",
+        ".write": "auth != null"
       }
     },
-    "lockers":           { ".read": true, ".write": "auth != null" },
+    "lockers":           { ".read": "auth != null", ".write": "auth != null" },
     "logs":              { ".read": "auth != null", ".write": "auth != null" },
     "locker_delete_logs":{ ".read": "auth != null", ".write": "auth != null" },
-    "kiosk_status":      { ".read": true, ".write": "auth != null" },
+    "kiosk_status":      { ".read": "auth != null", ".write": "auth != null" },
     "release_requests": {
       ".read": "auth != null",
-      "$mssv": { ".read": true, ".write": true }
+      "$mssv": { ".read": "auth != null", ".write": "auth != null" }
     },
     "locker_requests": {
       ".read": "auth != null",
       ".write": "auth != null"
     },
-    "otp_requests":  { "$mssv": { ".read": "auth != null", ".write": true } },
+    "otp_requests":  { "$mssv": { ".read": "auth != null", ".write": "auth != null" } },
     "otp_tokens":    { "$mssv": { ".read": "auth != null", ".write": "auth != null" } },
-    "verify_attempts":{ "$mssv": { ".read": "auth != null", ".write": true } },
-    "verify_results": { "$mssv": { ".read": true, ".write": "auth != null" } }
+    "verify_attempts":{ "$mssv": { ".read": "auth != null", ".write": "auth != null" } },
+    "verify_results": { "$mssv": { ".read": "auth != null", ".write": "auth != null" } }
   }
 }
 ```
 
-> Ghi chú: Google Apps Script ghi `locker_requests` bằng **Bearer token của Service Account** (Firebase Admin SDK qua OAuth2) — Admin SDK **luôn bỏ qua toàn bộ Security Rules** theo mặc định, nên dù rule yêu cầu `auth != null`, Apps Script vẫn ghi được bình thường. Rule `auth != null` ở đây chỉ áp dụng cho client Web thông thường (admin đã đăng nhập qua Firebase Auth mới đọc/duyệt được đơn).
+> **Vì sao siết:** các rule public (`.read: true` / `.write: true`) trước đây tồn tại riêng để `register.html` (tự tạo tài khoản không cần đăng nhập) và `user-dashboard.html` (tra cứu tủ, gửi OTP, yêu cầu trả tủ không cần đăng nhập) hoạt động. Hai file này đã bị xóa khỏi luồng chính (xem CHANGELOG 23/07/2026) và không còn trang web nào cần truy cập ẩn danh. Kiosk (`main.py`, `sync_listener.py`, `sync_tool.py`) và Google Apps Script đều ghi qua **Service Account (Firebase Admin SDK)**, luôn bỏ qua Security Rules, nên không bị ảnh hưởng bởi việc siết `auth != null`. Rule `auth != null` giờ chỉ áp dụng cho client Web (admin đã đăng nhập qua `login.html`).
 
 ### Sync Rules ưu tiên
 
@@ -467,7 +460,6 @@ IntelligentLocker.db
 | `ENROLL_FRAMES` | `face_worker.py` | `10` | Số frame thu thập khi đăng ký mặt |
 | `MAX_FAILS` | `face_worker.py` | `5` | Số lần fail trước khi lockout |
 | `LOCKOUT_SECS` | `face_worker.py` | `60` | Thời gian lockout (giây) — lưu ở `Session.face_lockout` (keyed theo mssv), không phải biến local nên vẫn còn hiệu lực dù thoát/vào lại trang camera |
-| `KIOSK_ONLINE_SECS` | `user-dashboard.html` | `90` | last_seen < 90s → Kiosk ONLINE |
 | `OTP_MAX_ATTEMPTS` | `sync_listener.py` | `5` | Số lần thử OTP sai tối đa |
 | `PENDING_EXPIRE_DAYS` | `cleanup_service.py` | `7` | Ngày tự xóa tài khoản chờ duyệt |
 | `PENDING_WARN_DAYS` | `cleanup_service.py` | `2` | Ngày gửi mail cảnh báo trước khi xóa |

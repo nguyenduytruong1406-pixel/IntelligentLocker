@@ -4,6 +4,38 @@ Toàn bộ lịch sử thay đổi theo ngày, mới nhất ở trên.
 
 ---
 
+## [23/07/2026] — Bỏ landing page 3-portal, chỉ còn luồng Admin; siết Firebase Rules
+
+### 🗑️ Xóa `landing.html`, `register.html`, `user-dashboard.html`
+
+**Lý do:** Đăng ký sinh viên đã chuyển hẳn sang Google Form + QR tại Kiosk từ 09/07/2026 (xem entry bên dưới), và luồng tra cứu tủ/trả tủ/OTP qua web (`user-dashboard.html`) không còn được sử dụng — mọi thao tác giờ thực hiện qua Kiosk hoặc kênh khác. Landing page 3-portal (Đăng ký / Admin / Tra cứu) không còn lý do tồn tại khi chỉ còn 1 portal thật sự dùng.
+
+**Thay đổi:**
+- Xóa `landing.html` (entry point cũ, điều hướng 3 portal)
+- Xóa `register.html` (form tự đăng ký sinh viên — đã lỗi thời từ khi chuyển qua Google Form)
+- Xóa `user-dashboard.html` (tra cứu tủ, yêu cầu trả tủ, OTP — không còn ai dùng)
+- `index.html`: đổi 2 chỗ redirect `window.location.replace("landing.html")` (khi chưa đăng nhập và khi logout) thành `"login.html"`, vì `landing.html` không còn tồn tại
+- `login.html` giờ là entry point duy nhất của hệ thống web
+
+### 🔐 Siết Firebase Realtime Database Rules — bỏ toàn bộ truy cập ẩn danh
+
+**Vấn đề:** Nhiều rule để `.read: true` / `.write: true` (public, không cần `auth != null`) chỉ vì `register.html` và `user-dashboard.html` cần thao tác khi sinh viên **chưa đăng nhập**. Sau khi xóa 2 file này, các rule public đó trở thành lỗ hổng thừa — bất kỳ ai cũng gọi thẳng được Firebase REST API để tạo tài khoản, đọc thông tin tủ, xin OTP, gửi yêu cầu trả tủ mà không cần qua giao diện nào.
+
+**Xác nhận trước khi siết:** Kiosk (`main.py`), `sync_listener.py`, `sync_tool.py` và Google Apps Script đều ghi Firebase qua **Service Account (Admin SDK)** — không phụ thuộc Security Rules, nên siết rule không ảnh hưởng các thành phần này.
+
+**Rule đã đổi từ public → `auth != null`:**
+- `users/$mssv` — `.read: true` → `auth != null`; `.write: "auth != null || !data.exists()"` → `auth != null` (đóng lỗ hổng tự tạo tài khoản ẩn danh của `register.html`)
+- `lockers` — `.read: true` → `auth != null`
+- `release_requests/$mssv` — `.read`/`.write: true` → `auth != null`
+- `otp_requests/$mssv` — `.write: true` → `auth != null`
+- `verify_attempts/$mssv` — `.write: true` → `auth != null`
+- `verify_results/$mssv` — `.read: true` → `auth != null`
+- `kiosk_status` — `.read: true` → `auth != null`
+
+**Kết quả:** toàn bộ Realtime Database giờ yêu cầu đăng nhập Firebase Auth cho mọi read/write, không còn path public nào.
+
+---
+
 ## [22/07/2026] — Fix lockout xác thực khuôn mặt không có tác dụng
 
 ### 🐛 Bug: quá `MAX_FAILS` lần vẫn không bị khóa thật

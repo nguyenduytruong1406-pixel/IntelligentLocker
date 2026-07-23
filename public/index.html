@@ -419,9 +419,9 @@ if(user){
     startDataListeners();
   }
 }
-else{window.location.replace("landing.html")}
+else{window.location.replace("login.html")}
 });
-window.logout=()=>signOut(auth).then(()=>window.location.replace("landing.html"));
+window.logout=()=>signOut(auth).then(()=>window.location.replace("login.html"));
 
 const THEME_ICONS={'light':'light_mode','dark':'dark_mode','system':'devices'};
 function applyTheme(mode){
