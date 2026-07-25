@@ -43,8 +43,8 @@ def _now_iso() -> str:
 
 def get_sqlite_users() -> dict:
     cur.execute(
-        "SELECT mssv, name, has_face, role, face_embedding, email, password, is_first_login "
-        "FROM Users"
+        "SELECT mssv, name, has_face, face_embedding, email, password, "
+        "is_first_login, locker_expiry_date FROM Users"
     )
     return {r["mssv"]: dict(r) for r in cur.fetchall()}
 
@@ -61,13 +61,21 @@ def get_sqlite_lockers() -> dict:
     return {r["locker_id"]: dict(r) for r in cur.fetchall()}
 
 
+# Các reason coi là "đã trả tủ hợp lệ" — dùng để tránh xóa nhầm locker vừa
+# được gán lại (xem released_lockers bên dưới). new_assignment/sync_auto_fix
+# KHÔNG thuộc nhóm này vì đó không phải sự kiện trả tủ.
+_RELEASE_REASONS = {"student_release", "admin_force", "auto_idle_locker", "auto_expired"}
+
+
 def get_delete_logs() -> tuple[set, dict]:
     """
     Đọc locker_delete_logs từ Firebase.
     Return:
       admin_deleted_mssv : set MSSV bị admin xóa hoàn toàn
       released_lockers   : {mssv: {locker_id: delete_time_gần_nhất}} — lần trả
-                            tủ GẦN NHẤT của mỗi cặp (mssv, locker_id). Dùng để
+                            tủ GẦN NHẤT của mỗi cặp (mssv, locker_id), với
+                            reason thuộc _RELEASE_REASONS (sinh viên tự trả,
+                            admin ép trả, hệ thống tự thu hồi do idle). Dùng để
                             so sánh với assigned_date hiện tại trong push():
                             nếu locker đã được GÁN LẠI hợp lệ sau lần trả này
                             (assigned_date mới hơn delete_time) thì KHÔNG được
@@ -87,7 +95,7 @@ def get_delete_logs() -> tuple[set, dict]:
 
         if reason == "admin_delete_card" and mssv:
             admin_deleted_mssv.add(mssv)
-        elif reason == "student_release" and mssv and lid and lid != "—":
+        elif reason in _RELEASE_REASONS and mssv and lid and lid != "—":
             bucket = released_lockers.setdefault(mssv, {})
             # Giữ lần trả GẦN NHẤT nếu có nhiều lần trả cùng cặp (mssv, locker_id)
             if lid not in bucket or dtime > bucket[lid]:
@@ -108,10 +116,12 @@ def pull(sqlite_users: dict, firebase_users: dict, dry_run: bool = False):
     # Firebase → SQLite: thêm / cập nhật
     for mssv, fb in firebase_users.items():
         name        = fb.get("name", "Unknown")
-        role        = fb.get("role", "student")
         fb_has_face = 1 if fb.get("has_face") else 0
         email       = fb.get("email", "")
         password_fb = fb.get("password")
+        # locker_expiry_date: web ghi field này khi admin cấp tài khoản/tủ —
+        # kiosk cần kéo về để tự tính ngày quá hạn (không có ở đây trước đây).
+        expiry_fb   = fb.get("locker_expiry_date", "") or ""
         # None nếu Firebase chưa có field này — giữ nguyên giá trị SQLite
         fb_first_login = fb.get("is_first_login")
 
@@ -120,6 +130,11 @@ def pull(sqlite_users: dict, firebase_users: dict, dry_run: bool = False):
             sq_email    = sq.get("email") or ""
             sq_password = sq.get("password")
             sq_first_login = 1 if sq.get("is_first_login") is None else int(sq.get("is_first_login"))
+            sq_expiry   = sq.get("locker_expiry_date") or ""
+            # Firebase là nguồn xác thực cho hạn tủ (web ghi lúc cấp tài khoản) —
+            # chỉ ghi đè khi Firebase có giá trị, tránh xóa mất hạn cũ nếu field
+            # tạm thời rỗng trên Firebase.
+            final_expiry = expiry_fb if expiry_fb else sq_expiry
 
             merged_has_face = max(int(sq["has_face"] or 0), fb_has_face)
             final_password  = password_fb if password_fb else sq_password
@@ -127,19 +142,19 @@ def pull(sqlite_users: dict, firebase_users: dict, dry_run: bool = False):
 
             changed = (
                 sq["name"] != name
-                or (sq["role"] or "student") != role
                 or int(sq["has_face"] or 0) != merged_has_face
                 or sq_email != email
                 or sq_password != final_password
                 or sq_first_login != final_first_login
+                or sq_expiry != final_expiry
             )
             if changed:
                 print(f"  [UPDATE] {name} ({mssv})")
                 if not dry_run:
                     cur.execute(
-                        "UPDATE Users SET name=?, role=?, has_face=?, "
-                        "email=?, password=?, is_first_login=? WHERE mssv=?",
-                        (name, role, merged_has_face, email, final_password, final_first_login, mssv),
+                        "UPDATE Users SET name=?, has_face=?, "
+                        "email=?, password=?, is_first_login=?, locker_expiry_date=? WHERE mssv=?",
+                        (name, merged_has_face, email, final_password, final_first_login, final_expiry, mssv),
                     )
                 updated += 1
         else:
@@ -148,9 +163,9 @@ def pull(sqlite_users: dict, firebase_users: dict, dry_run: bool = False):
             if not dry_run:
                 cur.execute(
                     "INSERT OR IGNORE INTO Users "
-                    "(mssv, name, role, has_face, email, password, is_first_login) "
+                    "(mssv, name, has_face, email, password, is_first_login, locker_expiry_date) "
                     "VALUES (?,?,?,?,?,?,?)",
-                    (mssv, name, role, fb_has_face, email, password_fb, new_first_login),
+                    (mssv, name, fb_has_face, email, password_fb, new_first_login, expiry_fb),
                 )
             added += 1
 
@@ -208,13 +223,14 @@ def push(sqlite_users: dict, firebase_users: dict, sqlite_lockers: dict, dry_run
                 data = {
                     "mssv"          : mssv,
                     "name"          : sq["name"],
-                    "role"          : sq["role"] or "student",
                     "has_face"      : has_face,
                     "email"         : sq.get("email") or "",
                     "is_first_login": bool(sq_first_login),
                 }
                 if sq_password:
                     data["password"] = sq_password
+                if sq.get("locker_expiry_date"):
+                    data["locker_expiry_date"] = sq["locker_expiry_date"]
                 users_ref.child(mssv).set(data)
             pushed_users += 1
         else:
@@ -227,10 +243,14 @@ def push(sqlite_users: dict, firebase_users: dict, sqlite_lockers: dict, dry_run
                 updates["email"] = sq_email
             if sq_password and sq_password != fb.get("password"):
                 updates["password"] = sq_password
-            # Sync thêm account_status (is_approved đã bỏ — không còn dùng)
-            sq_status = sq.get("account_status") or "ACTIVE"
-            if sq_status != (fb.get("account_status") or "ACTIVE"):
-                updates["account_status"] = sq_status
+            
+            # locker_expiry_date: Firebase là nguồn xác thực (web ghi lúc cấp
+            # tài khoản) nên bình thường không cần đẩy ngược lên — chỉ đẩy khi
+            # Firebase đang THIẾU field này mà SQLite lại có (safety-net, ví
+            # dụ do lỗi ghi tạm thời trên web trước đó).
+            sq_expiry = sq.get("locker_expiry_date") or ""
+            if sq_expiry and not fb.get("locker_expiry_date"):
+                updates["locker_expiry_date"] = sq_expiry
             # is_first_login: kiosk là nguồn xác thực (đổi khi sinh viên đổi
             # mật khẩu lần đầu) → luôn đẩy lên Firebase nếu khác/chưa có
             fb_first_login = fb.get("is_first_login")
@@ -357,6 +377,65 @@ def pull_lockers(dry_run: bool = False):
     print(f"  PULL lockers: ~{updated} cập nhật")
 
 
+def pull_delete_logs(dry_run: bool = False):
+    """
+    Pull Firebase locker_delete_logs → SQLite LOCKER_DELETE_LOG.
+
+    Trước đây bảng này chỉ 1 chiều: Kiosk ghi SQLite rồi đẩy lên Firebase
+    (locker_repository._log_delete), còn log tạo từ WEB (admin_force,
+    admin_delete_card, new_assignment gán từ web, sync_auto_fix) chỉ nằm
+    trên Firebase — SQLite local của Kiosk không bao giờ có. Hàm này bù lại
+    chiều ngược, để SQLite local luôn có đầy đủ lịch sử như Firebase.
+
+    Dedup: vì log Kiosk tự ghi cũng nằm trên Firebase (đã có sẵn trong
+    SQLite từ trước khi push lên), không dùng Firebase push-key để so khớp
+    (không lưu key đó ở SQLite). Thay vào đó so khớp theo bộ
+    (MSSV, LOCKER_ID, DELETE_TIME, REASON) — cùng 1 sự kiện thật sẽ luôns
+    trùng cả 4 giá trị này giữa 2 bên; DELETE_TIME chính xác tới giây nên
+    khả năng trùng giả (2 sự kiện khác nhau nhưng giống hệt 4 trường) gần
+    như không xảy ra trong thực tế vận hành 1 hệ thống tủ.
+    """
+    snap = fdb.reference("locker_delete_logs").get() or {}
+    if not snap:
+        print("  PULL delete_logs: 0 (Firebase rỗng)")
+        return
+
+    existing = {
+        (r["MSSV"], r["LOCKER_ID"], r["DELETE_TIME"], r["REASON"])
+        for r in con.execute(
+            "SELECT MSSV, LOCKER_ID, DELETE_TIME, REASON FROM LOCKER_DELETE_LOG"
+        ).fetchall()
+    }
+
+    inserted = 0
+    for entry in snap.values():
+        mssv   = entry.get("mssv", "") or ""
+        lid    = entry.get("locker_id", "") or ""
+        dtime  = entry.get("delete_time", "") or ""
+        reason = entry.get("reason", "") or ""
+        if not dtime or not reason:
+            continue  # entry rác/thiếu dữ liệu — bỏ qua, không đoán mò
+
+        key = (mssv, lid, dtime, reason)
+        if key in existing:
+            continue
+
+        if not dry_run:
+            cur.execute(
+                """
+                INSERT INTO LOCKER_DELETE_LOG (MSSV, LOCKER_ID, DELETE_TIME, REASON)
+                VALUES (?, ?, ?, ?)
+                """,
+                (mssv, lid, dtime, reason),
+            )
+        existing.add(key)  # tránh insert trùng nếu Firebase có 2 entry giống hệt nhau
+        inserted += 1
+
+    if not dry_run and inserted:
+        con.commit()
+    print(f"  PULL delete_logs: +{inserted} bản ghi mới từ web/sync_auto_fix")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════════════════════════════════════
@@ -376,6 +455,7 @@ def main():
         print("── PULL Firebase → SQLite ──────────────────────────────")
         pull(sqlite_users, firebase_users)
         pull_lockers()
+        pull_delete_logs()
 
     if mode in ("--push", "--sync"):
         print("\n── PUSH SQLite → Firebase ──────────────────────────────")

@@ -54,11 +54,7 @@ class AuthService:
 
 
 
-        ####  LỰA CHỌN KHI INACTIVE (USER ĐƯỢC TIẾP TỤC/ PHẢI BÁO ADMIN)
-
-        if user['account_status'] == 'DELETED':
-
-            return (False, "Tài khoản đã bị khóa, vui lòng liên hệ admin")
+        
 
         
 
@@ -136,15 +132,7 @@ class AuthService:
 
 
 
-        ####  LỰA CHỌN KHI INACTIVE (USER ĐƯỢC TIẾP TỤC/ PHẢI BÁO ADMIN)
-
-        if user['account_status'] == 'DELETED':
-
-            return (False, "Tài khoản đã bị khóa, vui lòng liên hệ admin")
-
-        if user['account_status'] == 'DONE':
-
-            return (False, "Tài khoản đã trả tủ, vui lòng liên hệ admin")
+       
 
 
 

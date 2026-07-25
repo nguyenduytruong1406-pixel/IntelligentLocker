@@ -9,5 +9,8 @@ class CleanupWorker(QThread):
         self.cleanup_service = cleanup_service
 
     def run(self):
-        self.cleanup_service.cleanup_users()
+        self.cleanup_service.cleanup_idle_warning()     # ngày 14 — cảnh báo idle
+        self.cleanup_service.cleanup_idle_lockers()      # ngày 16 — thu hồi idle
+        self.cleanup_service.cleanup_expiry_warning()    # trước 2 ngày hết hạn — cảnh báo
+        self.cleanup_service.cleanup_expired_lockers()   # đã qua hạn — thu hồi
         self.finished.emit()

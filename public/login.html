@@ -42,7 +42,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 
         // VUI LÒNG ĐIỀN LẠI API KEY CỦA BẠN VÀO ĐÂY
         const firebaseConfig = {
@@ -53,6 +53,10 @@
         };
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
+        // Hết phiên khi đóng trình duyệt/tab — không tự động đăng nhập lại
+        // lần sau, luôn phải qua form này (thay vì browserLocalPersistence
+        // mặc định lưu vĩnh viễn).
+        setPersistence(auth, browserSessionPersistence);
 
         document.addEventListener('keydown',e=>{if(e.key==='Enter')window.login()});
         window.login = function() {

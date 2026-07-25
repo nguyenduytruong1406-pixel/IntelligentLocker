@@ -74,7 +74,6 @@ class LockerService:
             print(f"[LockerService] Gửi lệnh mở tủ thất bại: {err}")
             return False, "Không thể kết nối tới khóa tủ, vui lòng thử lại hoặc báo nhân viên!", None
 
-        self.user_repo.update_account_status(mssv)
         self.locker_repo.insert_access_log(locker_id, mssv, "OPEN", name)
         push_open(mssv, locker_id, name)
         return True, f"Mở tủ {locker_id} thành công!", locker_number
@@ -87,7 +86,6 @@ class LockerService:
         if not locker_id:
             return False, "Không tìm thấy tủ!"
 
-        self.user_repo.update_account_status(mssv)
         ok = self.locker_repo.return_locker(mssv, locker_id, name)
         if ok:
             push_return(mssv, locker_id, name, reason="student_release")

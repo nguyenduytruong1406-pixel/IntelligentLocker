@@ -25,13 +25,47 @@ from ai.ai_utils                  import liveness, landmarks, embedding, ir_to_b
 from app.database.user_repository import UserRepository
 from app.utils.session             import Session
 
-MATCH_THRESHOLD  = 0.45
-CONFIRM_FRAMES   = 3
-LIVENESS_WINDOW  = 7   # số frame gần nhất để xét liveness
-LIVENESS_MIN_OK  = 4    # cần ít nhất 4/7 frame REAL mới pass (auth)
-MAX_FAILS        = 5
-LOCKOUT_SECS     = 60
-ENROLL_FRAMES    = 10
+MATCH_THRESHOLD    = 0.45
+CONFIRM_FRAMES     = 3
+LIVENESS_WINDOW    = 7   # số frame gần nhất để xét liveness
+LIVENESS_MIN_OK    = 4    # cần ít nhất 3/9 frame REAL mới pass (auth)
+MAX_FAILS          = 20
+LOCKOUT_SECS       = 60
+ENROLL_FRAMES      = 10
+BOX_LOST_GRACE     = 3   # số frame liên tiếp KHÔNG thấy mặt trước khi thật sự reset
+                          # (MediaPipe detect chập chờn frame-to-frame trên IR —
+                          # mất box 1 frame đơn lẻ không có nghĩa là mặt đã rời khung hình)
+POSE_MAX_OFFSET    = 0.35   # lệch mũi so với tâm 2 mắt (tỉ lệ theo khoảng cách 2 mắt)
+                             # vượt ngưỡng này coi là nghiêng quá — bỏ qua embedding/match
+
+
+def _pose_ok(shape) -> bool:
+    """
+    Kiểm tra mặt có đủ chính diện để embedding đáng tin không.
+
+    dlib ResNet 128-D được train chủ yếu trên mặt gần chính diện — embedding
+    từ góc nghiêng mạnh (gần profile) không đáng tin, dù liveness vẫn pass
+    bình thường (liveness chỉ kiểm tra da thật, không quan tâm góc mặt).
+
+    Heuristic đơn giản, không cần model riêng: so lệch vị trí mũi (landmark
+    #30) so với điểm giữa 2 mắt (landmark #36, #45), chuẩn hóa theo khoảng
+    cách 2 mắt. Mặt càng nghiêng, mũi càng lệch khỏi tâm 2 mắt.
+    """
+    try:
+        pts       = shape.parts()
+        left_eye  = pts[36]
+        right_eye = pts[45]
+        nose      = pts[30]
+    except (IndexError, AttributeError):
+        return True  # shape không đủ 68 điểm — không gate, để bước sau xử lý
+
+    eye_width = abs(right_eye.x - left_eye.x)
+    if eye_width < 1:
+        return False
+
+    eye_mid_x     = (left_eye.x + right_eye.x) / 2
+    offset_ratio  = abs(nose.x - eye_mid_x) / eye_width
+    return offset_ratio < POSE_MAX_OFFSET
 
 
 class FaceWorker(QThread):
@@ -132,6 +166,7 @@ class FaceWorker(QThread):
         last_match_mssv   = None
         fail_count        = 0
         enroll_embeddings = []
+        box_lost_streak   = 0
 
         try:
             while self._running:
@@ -157,11 +192,16 @@ class FaceWorker(QThread):
                 self.face_detected.emit(box is not None)
 
                 if not box:
-                    liveness_window.clear()
-                    confirm_count   = 0
-                    last_match_mssv = None
+                    box_lost_streak += 1
+                    if box_lost_streak >= BOX_LOST_GRACE:
+                        liveness_window.clear()
+                        confirm_count   = 0
+                        last_match_mssv = None
                     time.sleep(0.033)
                     continue
+
+                # Mặt đã thấy lại — reset streak mất box
+                box_lost_streak = 0
 
                 # ── Liveness — chạy trên IR gốc (grayscale), không phải BGR giả ──
                 live_ok, live_msg = liveness(ir) if ir is not None else (False, "Chờ IR...")
@@ -190,6 +230,15 @@ class FaceWorker(QThread):
                 # ── Landmarks + Embedding — chạy trên IR (qua ir_to_bgr) ──────
                 shape, det = landmarks(recog_frame)
                 if shape is None:
+                    time.sleep(0.033)
+                    continue
+
+                # ── Pose gate ──────────────────────────────────────────────
+                # Liveness đã pass (da thật) nhưng góc mặt có thể vẫn nghiêng
+                # quá — không burn fail_count / không reset liveness_window,
+                # chỉ bỏ qua frame này và chờ frame chính diện hơn.
+                if not _pose_ok(shape):
+                    self.liveness_status.emit(True, "Vui lòng nhìn thẳng camera")
                     time.sleep(0.033)
                     continue
 

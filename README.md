@@ -61,7 +61,7 @@ SML/
 │   ├── services/
 │   │   ├── auth_service.py              ← Xác thực, lưu embedding, get_name_user
 │   │   ├── locker_service.py            ← open/assign/return/check_user_has_locker
-│   │   ├── cleanup_service.py           ← Thu hồi tủ idle, pending expire
+│   │   ├── cleanup_service.py           ← Cảnh báo + thu hồi tủ (idle, hết hạn — 4 giai đoạn)
 │   │   └── firebase_hooks.py            ← Push thay đổi lên Firebase
 │   │
 │   ├── utils/
@@ -160,23 +160,28 @@ QThread FaceWorker.run()
     │
     recog_frame = ir_to_bgr(ir)  ưu tiên IR · fallback color nếu IR chưa sẵn sàng
     │
+    ├─ center_face(recog_frame)
+    │       không thấy mặt → box_lost_streak++ · chỉ reset liveness/confirm
+    │       khi mất box đủ BOX_LOST_GRACE frame liên tiếp (chịu chập chờn detect)
+    │
     ├─ [mode=register]
-    │       center_face(recog_frame) → landmarks() → embedding()  (chạy trên IR)
+    │       landmarks() → embedding()  (chạy trên IR)
     │       liveness(ir) chỉ cần 1 frame REAL, không gate chặt
+    │       _pose_ok(shape) — bỏ frame nghiêng quá (POSE_MAX_OFFSET), không tính vào ENROLL_FRAMES
     │       Thu thập ENROLL_FRAMES=10 → np.mean() → register_done.emit()
     │
     └─ [mode=auth]
-            center_face(recog_frame)
-                │
-                ├─ liveness(ir) — rolling window LIVENESS_WINDOW=7 frame
-                │   cần ≥ LIVENESS_MIN_OK frame REAL trong window gần nhất
-                │   (thay cho yêu cầu liên tiếp cũ — chịu nhiễu môi trường tốt hơn)
-                │
-                ├─ landmarks(recog_frame) → embedding(recog_frame, shape)
-                │
-                └─ So sánh L2 với known_embeddings
-                   MATCH_THRESHOLD=0.45, CONFIRM_FRAMES=3
-                   → auth_success.emit(mssv, name)
+            │
+            ├─ liveness(ir) — rolling window LIVENESS_WINDOW=7 frame
+            │   cần ≥ LIVENESS_MIN_OK frame REAL trong window gần nhất
+            │   (thay cho yêu cầu liên tiếp cũ — chịu nhiễu môi trường tốt hơn)
+            │
+            ├─ landmarks(recog_frame) → _pose_ok(shape) → embedding(recog_frame, shape)
+            │   nghiêng quá (POSE_MAX_OFFSET) → bỏ qua frame, không tính fail/không reset liveness
+            │
+            └─ So sánh L2 với known_embeddings
+               MATCH_THRESHOLD=0.45, CONFIRM_FRAMES=3
+               → auth_success.emit(mssv, name)
 ```
 
 **Lý do chuyển sang IR cho nhận diện (không chỉ liveness):**
@@ -195,11 +200,20 @@ Kiosk / SQLite ─────────────────────�
 
 Firebase ────────────────────────────────────────► SQLite
    (sync_listener.py — Websocket push, ~0ms delay)
-   Lắng nghe: /users · /lockers · /otp_requests · /verify_attempts
+   Lắng nghe: /users · /lockers · /otp_requests · /verify_attempts ·
+              /pending_credentials · /locker_delete_logs
 
 Firebase ◄──────────────────────────────────────► SQLite
    (sync_tool.py — chạy 1 lần khi boot hoặc sau mất mạng)
 ```
+
+> **`/locker_delete_logs` (từ 25/07/2026):** trước đây chỉ 1 chiều (Kiosk ghi
+> SQLite `LOCKER_DELETE_LOG` rồi đẩy lên Firebase) — log tạo từ Web (admin ép
+> trả, xóa thẻ, gán tủ từ web, `sync_auto_fix`) chỉ nằm trên Firebase, SQLite
+> local của Kiosk không bao giờ có. Giờ đồng bộ 2 chiều: `sync_tool.py` (lúc
+> boot) kéo bù toàn bộ lịch sử cũ, `sync_listener.py` (`on_delete_log_added`)
+> đồng bộ realtime các log mới phát sinh trong lúc Kiosk đang chạy. Dedup theo
+> bộ (MSSV, LOCKER_ID, DELETE_TIME, REASON), không cần lưu Firebase push-key.
 
 ### Luồng OTP trả tủ (server-side verify)
 
@@ -254,7 +268,7 @@ Admin vào Web Dashboard → tab "Đơn Đăng Ký" → tìm theo MSSV/tên
       ▼
 Bấm "➕ Thêm tài khoản" (chỉ sau khi đã kiểm tra đơn giấy)
       │
-      ├─► Ghi /users/{mssv} (is_approved:1, has_face:false)
+      ├─► Ghi /users/{mssv} (has_face:false)
       └─► Đánh dấu /locker_requests/{mssv}.status = "approved" (giữ lại lịch sử)
       │
       ▼
@@ -291,6 +305,14 @@ login.html (entry point, admin)
 | `login.html` | Đăng nhập admin (entry point) | Không |
 | `index.html` | Dashboard admin (6 tab) | Bắt buộc |
 
+> **Phiên đăng nhập (từ 25/07/2026):** dùng `setPersistence(auth,
+> browserSessionPersistence)` thay vì mặc định `browserLocalPersistence` của
+> Firebase Auth. Trước đây phiên lưu vĩnh viễn trong trình duyệt — vào thẳng
+> `index.html` (bookmark/URL cũ) sẽ tự động vào dashboard mà không qua
+> `login.html`, kể cả sau khi đóng trình duyệt rất lâu. Giờ đóng trình
+> duyệt/tab là mất phiên, lần sau bắt buộc đăng nhập lại. Áp dụng ở cả
+> `login.html` và `index.html` (đồng nhất, đề phòng phiên cũ kiểu local còn sót).
+
 ### 6 Tab trong index.html
 
 | Tab | Nội dung |
@@ -298,7 +320,6 @@ login.html (entry point, admin)
 | 🏠 Trang Chủ | 5 stat cards: Đã duyệt · Chờ duyệt · Tủ trống · Tủ đang dùng · **Kiosk status** |
 | 👥 Sinh Viên | Bảng users · tìm kiếm · duyệt/khóa · gán tủ · xóa thẻ thủ công |
 | 🗄 Tủ | Sơ đồ tủ realtime · gán/trả thủ công |
-| 🔄 Trả Tủ | Bảng yêu cầu trả tủ pending · xác nhận trả |
 | 📋 Lịch Sử | Log LOCKER_DELETE_LOG · search · export CSV |
 | 📝 Đơn Đăng Ký | Đơn từ Google Form (`locker_requests`) · tìm theo MSSV/tên · nút "➕ Thêm tài khoản" cấp tài khoản sau khi đã nhận đơn giấy ký tay |
 
@@ -306,32 +327,48 @@ login.html (entry point, admin)
 
 ## 🗄 Database Schema (SQLite)
 
+> Nguồn sự thật duy nhất là dict `SCHEMA` trong `app/database/database.py` — bảng dưới
+> đây chỉ là bản phản ánh lại để đọc nhanh. Đổi cấu trúc DB thì sửa ở đó rồi chạy
+> lại file, không sửa tay ở đây.
+
 ```sql
 Users (
-    mssv          TEXT PRIMARY KEY,
-    name          TEXT NOT NULL,
-    password_hash TEXT NOT NULL,         -- SHA-256
-    is_approved   INTEGER DEFAULT 0,     -- 0 | 1
-    has_face      INTEGER DEFAULT 0,     -- 0 | 1
-    face_embedding BLOB,                 -- pickle(np.ndarray 128-D)
-    role          TEXT DEFAULT 'student',
-    email         TEXT DEFAULT ''
+    mssv               TEXT PRIMARY KEY,
+    name               TEXT NOT NULL,
+    has_face           INTEGER NOT NULL DEFAULT 0,   -- 0 | 1
+    face_embedding     BLOB,                         -- pickle(np.ndarray 128-D)
+    password           TEXT,                         -- hash SHA-256
+    email              TEXT NOT NULL DEFAULT '',
+    locker_expiry_date TEXT NOT NULL DEFAULT '',      -- hạn mượn tủ tối đa, từ đơn đăng ký
+    OTP                NUMERIC,
+    is_first_login     INTEGER NOT NULL DEFAULT 1     -- 1 = chưa đổi mật khẩu random do admin cấp
 )
 
 Lockers (
-    locker_id     TEXT PRIMARY KEY,      -- 'L01'...'L09'
-    size          TEXT NOT NULL,         -- 'small' | 'big'
-    status        TEXT DEFAULT 'empty',  -- 'empty' | 'occupied'
-    current_mssv  TEXT REFERENCES Users(mssv),
-    assigned_date TEXT DEFAULT '',       -- 'YYYY-MM-DD HH:MM:SS' | ''
-    last_open     TEXT DEFAULT ''        -- 'YYYY-MM-DD HH:MM:SS' | ''
-)
+    locker_id        TEXT PRIMARY KEY,      -- 'L01'...'L09'
+    size             TEXT NOT NULL,         -- 'small' | 'big'
+    status           TEXT NOT NULL DEFAULT 'empty',  -- 'empty' | 'occupied'
+    current_mssv     TEXT REFERENCES Users(mssv) ON DELETE SET NULL,
+    assigned_date    TEXT,                  -- 'YYYY-MM-DD HH:MM:SS' | '' | NULL
+    last_open        TEXT,                  -- 'YYYY-MM-DD HH:MM:SS' | NULL
+    idle_warned_at   TEXT DEFAULT NULL,     -- đã cảnh báo idle (ngày 14) cho lượt mượn hiện tại chưa
+    expiry_warned_at TEXT DEFAULT NULL      -- đã cảnh báo sắp hết hạn (trước 2 ngày) chưa
+)                                           -- cả 2 cột *_warned_at reset về NULL khi BORROW/RETURN;
+                                            -- idle_warned_at còn reset khi OPEN (mở tủ = hết idle)
 
 LockerLog (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL,
-    event     TEXT NOT NULL,             -- OPEN_LOCKER | ASSIGN_LOCKER | RELEASE_LOCKER
+    event     TEXT NOT NULL,             -- OPEN_LOCKER
     locker_id TEXT REFERENCES Lockers(locker_id),
+    mssv      TEXT,
+    name      TEXT
+)
+
+FaceLog (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    event     TEXT NOT NULL,
     mssv      TEXT,
     name      TEXT
 )
@@ -341,17 +378,43 @@ LOCKER_DELETE_LOG (
     MSSV        TEXT NOT NULL,
     LOCKER_ID   TEXT NOT NULL,
     DELETE_TIME TEXT NOT NULL,
-    REASON      TEXT NOT NULL            -- student_release | auto_inactive_7days
-)                                        -- | admin_force | admin_deactivate
-                                         -- | admin_delete_card | auto_expired_pending
+    REASON      TEXT NOT NULL            -- student_release | auto_idle_locker | auto_expired
+)                                        -- | admin_force | admin_delete_card
+                                         -- | sync_auto_fix  ngoài ra còn new_assignment do được đồng bộ từ web
 ```
+
+> **Đã bỏ khỏi `Users`** (từng có ở bản cũ, không còn dùng): `role`, `is_approved`,
+> `registered_at`, `warned_at`, `account_status`, `last_active_time`. Các cột này
+> thuộc về khái niệm "chờ duyệt" và luồng "cảnh báo idle phiên đăng nhập" (2h/5h)
+> kiểu SML cũ — cả hai đã bị bỏ.
+>
+> **Cleanup hiện tại xử lý ở cấp tủ, 4 giai đoạn** (`cleanup_service.py`, chạy qua
+> `CleanupWorker` mỗi 60s — xem `main.py`):
+>
+> | Giai đoạn | Điều kiện | Hành động |
+> |---|---|---|
+> | `cleanup_idle_warning` | không mở tủ ≥ `IDLE_WARN_DAYS` (14) ngày, chưa cảnh báo | gửi mail, đánh dấu `idle_warned_at` |
+> | `cleanup_idle_lockers` | không mở tủ ≥ `IDLE_REVOKE_DAYS` (16) ngày | **thu hồi thật** (`auto_idle_locker`) |
+> | `cleanup_expiry_warning` | còn ≤ `EXPIRY_WARN_DAYS` (2) ngày tới `locker_expiry_date`, chưa cảnh báo | gửi mail, đánh dấu `expiry_warned_at` |
+> | `cleanup_expired_lockers` | đã qua `locker_expiry_date` | **thu hồi thật** (`auto_expired`) |
+>
+> Cả 2 mốc thu hồi thật đều không phụ thuộc đã cảnh báo hay chưa — tới hạn cứng là
+> thu hồi. Nếu 1 tủ vừa idle quá hạn vừa hết hạn mượn cùng lúc, `cleanup_idle_lockers`
+> chạy trước sẽ thu hồi trước nên không bị xử lý/gửi mail 2 lần.
+>
+> **`Service_engineer_log`** (log kỹ thuật viên) không còn được `database.py`
+> quản lý (không tự tạo/sửa cột nữa) — nếu DB cũ còn bảng này thì vẫn giữ nguyên,
+> chỉ là không có schema chính thức cho nó nữa.
+>
+> **`current_mssv` giờ là `ON DELETE SET NULL`** — xoá một `Users` sẽ tự trả tủ
+> của người đó về trống thay vì bị chặn bởi lỗi `FOREIGN KEY constraint failed`.
 
 ---
 
 ## 🔥 Firebase Structure
 
 ```
-/users/{mssv}                    → name, is_approved, has_face, role, email, registered_at
+/users/{mssv}                    → name, has_face, email
 /lockers/{L01}                   → status, current_mssv, size, last_open, assigned_date
 /logs/{push_id}                  → time, event, locker_id, mssv, name
 /locker_delete_logs/{push_id}    → mssv, locker_id, delete_time, reason
@@ -365,6 +428,12 @@ LOCKER_DELETE_LOG (
 /otp_tokens/{mssv}               → hashed_code, expires_at, attempts (kiosk only)
 /verify_attempts/{mssv}          → code, ts (web → kiosk)
 /verify_results/{mssv}           → ok, reason, ts (kiosk → web)
+/pending_credentials/{mssv}      → password, locker_id, expiry_date, created_at
+                                    (web ghi lúc cấp tài khoản nếu Kiosk online;
+                                    sync_listener.py đọc, gửi mail, rồi tự xóa node)
+/credential_email_log/{mssv}     → locker_id, expiry_date, sent_via
+                                    ("kiosk_sync_listener"|"emailjs_offline"), sent_at
+                                    (audit — web dùng để hiện trạng thái cột "Gửi Mail")
 ```
 
 ### Security Rules (cập nhật 23/07/2026 — siết toàn bộ về `auth != null`)
@@ -406,7 +475,7 @@ LOCKER_DELETE_LOG (
 
 | Trường | Quy tắc |
 |---|---|
-| `name`, `is_approved`, `role` | Firebase thắng |
+| `name` | Firebase thắng |
 | `has_face`, `face_embedding` | Local thắng (biometric không bị ghi đè từ web) |
 | `Lockers.last_open` | Lấy giá trị **mới hơn** (ISO string compare) |
 | Xóa tài khoản | Firebase thắng → xóa SQLite + trả tủ liên quan |
@@ -458,11 +527,14 @@ IntelligentLocker.db
 | `LIVENESS_WINDOW` | `face_worker.py` | `7` | Số frame gần nhất để xét liveness (rolling window) |
 | `LIVENESS_MIN_OK` | `face_worker.py` | `4` | Số frame REAL tối thiểu trong window để pass (auth) |
 | `ENROLL_FRAMES` | `face_worker.py` | `10` | Số frame thu thập khi đăng ký mặt |
-| `MAX_FAILS` | `face_worker.py` | `5` | Số lần fail trước khi lockout |
+| `BOX_LOST_GRACE` | `face_worker.py` | `3` | Số frame liên tiếp không thấy mặt trước khi reset liveness/confirm (chịu detect chập chờn) |
+| `POSE_MAX_OFFSET` | `face_worker.py` | `0.35` | Lệch mũi/tâm 2 mắt (tỉ lệ theo khoảng cách 2 mắt) — vượt ngưỡng coi là nghiêng quá, bỏ qua embedding/match |
+| `MAX_FAILS` | `face_worker.py` | `20` | Số lần fail trước khi lockout |
 | `LOCKOUT_SECS` | `face_worker.py` | `60` | Thời gian lockout (giây) — lưu ở `Session.face_lockout` (keyed theo mssv), không phải biến local nên vẫn còn hiệu lực dù thoát/vào lại trang camera |
 | `OTP_MAX_ATTEMPTS` | `sync_listener.py` | `5` | Số lần thử OTP sai tối đa |
-| `PENDING_EXPIRE_DAYS` | `cleanup_service.py` | `7` | Ngày tự xóa tài khoản chờ duyệt |
-| `PENDING_WARN_DAYS` | `cleanup_service.py` | `2` | Ngày gửi mail cảnh báo trước khi xóa |
+| `IDLE_WARN_DAYS` | `cleanup_service.py` | `14` | Số ngày tủ không mở trước khi gửi mail cảnh báo (`cleanup_idle_warning`) |
+| `IDLE_REVOKE_DAYS` | `cleanup_service.py` | `16` | Số ngày tủ không mở trước khi tự thu hồi (`cleanup_idle_lockers`) |
+| `EXPIRY_WARN_DAYS` | `cleanup_service.py` | `2` | Số ngày trước `locker_expiry_date` để gửi mail cảnh báo (`cleanup_expiry_warning`) |
 
 ---
 
@@ -526,6 +598,7 @@ py -3.11 sync_tool.py --push    # Chỉ SQLite → Firebase
 | 17/06 | **Chuyển nhận diện sang IR** (`ir_to_bgr()`) thay RGB · liveness rolling-window (7 frame, ≥2 REAL) thay liên tiếp · fix false-reject trong điều kiện thiếu sáng |
 | 09/07 | **Đổi mô hình đăng ký tài khoản**: QR tại Kiosk → Google Form → PDF xin chữ ký GVHD → admin duyệt thủ công · thêm node Firebase `locker_requests` · thêm tab Web "Đơn Đăng Ký" (tìm kiếm + cấp tài khoản) · Google Apps Script tự xuất PDF + gửi mail + ghi Firebase qua OAuth2 Service Account · fix rò rỉ private key (chuyển sang Script Properties) |
 | 22/07 | **Fix lockout xác thực khuôn mặt không có tác dụng thật**: `lockout_until` được gán nhưng không bao giờ đọc lại → chuyển sang lưu ở `Session.face_lockout` (theo mssv, sống ngoài vòng đời `FaceWorker`) · dừng hẳn worker + tự quay về màn chọn hình thức xác thực khi bị khóa (`lockout_active` signal) thay vì chờ tại chỗ · fix `UnboundLocalError` do import `Session` cục bộ thừa làm shadow biến module-level |
+| 25/07 | **Web Admin — hàng loạt fix nhỏ đi kèm cảnh báo/thu hồi 4 giai đoạn**: `index.html` — fix `delete_time` lệch giờ UTC (`toISOString()`) và sai định dạng `vi-VN` không sort được → đồng nhất `toLocaleString('sv-SE')` (giờ VN, sortable); `_reasonMap` khớp đúng reason thật + bỏ field chết; login/dashboard đổi `browserSessionPersistence`; nhãn "Gửi Mail" phân biệt Kiosk/EmailJS · `sync_listener.py` — ghi `credential_email_log` khi Kiosk tự gửi mật khẩu (trước đây không ghi, cột "Gửi Mail" luôn trống); thêm listener `on_delete_log_added` đồng bộ realtime `locker_delete_logs` Firebase → SQLite · `sync_tool.py` — thêm `pull_delete_logs()` kéo bù lịch sử cũ lúc boot, `_RELEASE_REASONS` bổ sung `admin_force`/`auto_idle_locker`/`auto_expired` (trước chỉ có `student_release`) · **`face_worker.py`** — thêm `BOX_LOST_GRACE` (không reset liveness/confirm khi mất box chỉ 1 frame chập chờn) và `_pose_ok()` pose gate (bỏ qua embedding/match khi mặt nghiêng quá `POSE_MAX_OFFSET`, tránh cộng oan `fail_count`); thử rồi revert CLAHE + tỉ lệ std/mean trong `ai_utils.liveness()` (vấn đề thực tế không nằm ở ngưỡng liveness) |
 
 > Chi tiết từng thay đổi xem tại [`CHANGELOG.md`](./CHANGELOG.md)
 

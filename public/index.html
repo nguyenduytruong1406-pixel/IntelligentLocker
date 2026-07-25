@@ -79,10 +79,8 @@ th{background-color:var(--table-th);color:var(--table-th-text)}
 #stat-kiosk.online{border-color:#28a745;background:rgba(40,167,69,.06)}
 #stat-kiosk.offline{border-color:#dc3545;background:rgba(220,53,69,.06)}
 .kiosk-last-seen{font-size:.75rem;color:var(--text4);margin-top:4px}
-/* Release pending card */
-#stat-release-pending.has-pending{border-color:var(--warning);background:rgba(255,193,7,.08);animation:pulse-border 2s ease-in-out infinite}
+
 @keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 rgba(255,193,7,.4)}50%{box-shadow:0 0 0 6px rgba(255,193,7,0)}}
-body.dark #stat-release-pending.has-pending{background:rgba(255,193,7,.06)}
 /* Header badge */
 .kiosk-header-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:.78rem;font-weight:600;margin-left:12px;vertical-align:middle;transition:background .4s,color .4s}
 .kiosk-header-badge.online{background:#d1f2e0;color:#155724}
@@ -150,7 +148,6 @@ h2{font-size:1.2rem}
 <li class="nav-item" onclick="switchTab('tab-lockers',this)"><span class="nav-icon ms">inventory_2</span><span class="nav-text">Tủ Khóa</span></li>
 <li class="nav-item" id="nav-logs" onclick="switchTab('tab-logs',this)"><span class="nav-icon ms">receipt_long</span><span class="nav-text">Nhật Ký</span></li>
 <li class="nav-item" id="nav-delete-log" onclick="switchTab('tab-delete-log',this)"><span class="nav-icon ms">delete_history</span><span class="nav-text">Lịch Sử Tủ</span></li>
-<li class="nav-item" id="nav-release" onclick="switchTab('tab-release',this)"><span class="nav-icon ms">logout</span><span class="nav-text">Trả Tủ</span><span class="badge" id="release-badge" style="display:none">0</span></li>
 <li class="nav-item" id="nav-locker-requests" onclick="switchTab('tab-locker-requests',this)"><span class="nav-icon ms">assignment_ind</span><span class="nav-text">Đơn Đăng Ký</span><span class="badge" id="locker-requests-badge" style="display:none">0</span></li>
 </ul>
 </div>
@@ -174,10 +171,6 @@ h2{font-size:1.2rem}
             <div class="stat-value" id="kiosk-status-text" style="font-size:1.1rem;margin-bottom:4px">—</div>
             <div class="stat-label">Kiosk</div>
             <div class="kiosk-last-seen" id="kiosk-last-seen">Đang kiểm tra…</div>
-        </div>
-        <div class="stat-card" id="stat-release-pending" onclick="switchTab('tab-release',document.getElementById('nav-release'))" style="cursor:pointer">
-            <div class="stat-value" id="stat-release-value" style="color:var(--warning)">0</div>
-            <div class="stat-label">Yêu cầu trả tủ</div>
         </div>
     </div>
 </div>
@@ -227,17 +220,6 @@ h2{font-size:1.2rem}
         <table>
             <thead><tr><th>Thời Gian</th><th>MSSV</th><th>Tủ</th><th>Lý Do</th></tr></thead>
             <tbody id="delete-log-list"><tr><td colspan="4" style="text-align:center;color:var(--text4);padding:20px">Đang tải...</td></tr></tbody>
-        </table>
-    </div>
-</div>
-<div id="tab-release" class="tab-content">
-    <div class="section-header">
-        <h3>Yêu Cầu Trả Tủ</h3>
-    </div>
-    <div class="table-responsive" style="margin-top:12px">
-        <table>
-            <thead><tr><th>MSSV</th><th>Tủ</th><th>Thời Gian Gửi</th><th>Trạng Thái</th><th>Xử Lý</th></tr></thead>
-            <tbody id="release-list"><tr><td colspan="5" style="text-align:center;color:var(--text4);padding:20px">Đang tải...</td></tr></tbody>
         </table>
     </div>
 </div>
@@ -306,7 +288,6 @@ h2{font-size:1.2rem}
 <div class="user-info-item"><strong>Khuôn mặt</strong><span id="user-detail-face">—</span></div>
 </div>
 <div class="modal-detail-row"><strong>Tủ đang mượn:</strong><span id="user-detail-locker">Không có</span></div>
-<div class="modal-detail-row"><strong>Vai trò:</strong><span id="user-detail-role">student</span></div>
 <div style="margin-top:15px;display:flex;gap:10px;flex-wrap:wrap">
 <button class="btn btn-assign" onclick="openAssignModal(window._currentUserMSSV)">Gán tủ</button>
 <button class="btn btn-lock" onclick="releaseUserLocker(window._currentUserMSSV)">Trả tủ</button>
@@ -372,7 +353,7 @@ h2{font-size:1.2rem}
       <small>Tủ đang dùng không mở quá N ngày → hiện tag vàng</small>
     </div>
     <div class="settings-control">
-      <input type="number" id="cfg-idle-warn" min="1" max="365" value="5"> <span>ngày</span>
+      <input type="number" id="cfg-idle-warn" min="1" max="365" value="14"> <span>ngày</span>
     </div>
   </div>
   <div class="settings-row">
@@ -381,7 +362,7 @@ h2{font-size:1.2rem}
       <small>Tủ idle quá N ngày → hiện tag đỏ, có thể thu hồi</small>
     </div>
     <div class="settings-control">
-      <input type="number" id="cfg-idle-auto" min="1" max="365" value="7"> <span>ngày</span>
+      <input type="number" id="cfg-idle-auto" min="1" max="365" value="16"> <span>ngày</span>
     </div>
   </div>
 
@@ -397,7 +378,7 @@ h2{font-size:1.2rem}
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
 import{getDatabase,ref,onValue,update,remove,push,query,limitToLast,set,get}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
-import{getAuth,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
+import{getAuth,onAuthStateChanged,signOut,setPersistence,browserSessionPersistence}from"https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 
 const firebaseConfig={
 apiKey:"AIzaSyDwvFJXeKPvGi1Wj1RJlm0Pe5UU-eAkVms",
@@ -408,6 +389,7 @@ databaseURL:"https://lockerxmakerspacexhcmute-default-rtdb.asia-southeast1.fireb
 const app=initializeApp(firebaseConfig);
 const db=getDatabase(app);
 const auth=getAuth(app);
+setPersistence(auth,browserSessionPersistence);
 
 let _listenersStarted=false;
 onAuthStateChanged(auth,(user)=>{
@@ -479,27 +461,25 @@ let _usersData={},_lockersData={},_allUsersData=[];
 const _reasonMap={
   'new_assignment':'🆕 Gán tủ mới',
   'student_release':'✅ Sinh viên tự trả',
-  'auto_inactive_7days':'🕐 Hệ thống (7 ngày idle)',
+  'auto_idle_locker':'🕐 Hệ thống tự thu hồi (idle 16 ngày)',
+  'auto_expired':'⏳ Hết hạn mượn (tự động)',
   'admin_force':'🔒 Admin ép trả',
-  'admin_deactivate':'👤 Vô hiệu hóa tài khoản',
   'admin_delete_card':'🗑️ Admin xóa thẻ thủ công',
-  'auto_expired_pending':'⏳ Hết hạn chờ duyệt (tự động)',
   'sync_auto_fix':'🔧 Tự động dọn (sync)'
 };
 let _allDeleteLogs=[];
 let _allLockerRequests=[];
 let _pendingCredentials={};
 let _credentialEmailLog={};
-let _pendingReleaseItems=[];
 let _pendingLockerReqItems=[];
 
-// Chuông thông báo góc phải trên — chỉ báo chấm đỏ (không số), gộp 2 nguồn:
-// yêu cầu trả tủ đang chờ xử lý + đơn đăng ký mới đang chờ cấp tài khoản
+// Chuông thông báo góc phải trên — chỉ báo chấm đỏ (không số):
+// đơn đăng ký mới đang chờ cấp tài khoản
 function _renderNotifBell(){
   const badge=document.getElementById('notif-badge');
   const notifList=document.getElementById('notif-list');
   if(!badge||!notifList) return;
-  const hasAny=_pendingReleaseItems.length>0||_pendingLockerReqItems.length>0;
+  const hasAny=_pendingLockerReqItems.length>0;
   badge.classList.toggle('visible',hasAny);
 
   if(!hasAny){
@@ -507,9 +487,6 @@ function _renderNotifBell(){
     return;
   }
   let html='';
-  _pendingReleaseItems.forEach(r=>{
-    html+=`<div class="notif-item" onclick="window._notifGoTo('tab-release')"><strong>🔁 Yêu cầu trả tủ</strong><br><small>${r.mssv||'—'} — Tủ ${r.locker_id||'—'}</small></div>`;
-  });
   _pendingLockerReqItems.forEach(r=>{
     html+=`<div class="notif-item" onclick="window._notifGoTo('tab-locker-requests')"><strong>📝 Đơn đăng ký mới</strong><br><small>${r.name||'—'} (${r.mssv||'—'})</small></div>`;
   });
@@ -574,7 +551,7 @@ _knownUsers[mssv]=hasFace;
 for(const mssv in data){
   const s=data[mssv];
   const safeName = s.name || 'Chưa cập nhật';
-  _allUsersData.push({mssv,name:safeName,has_face:s.has_face,role:s.role||'student',email:s.email||'',registered_at:s.registered_at||''});
+  _allUsersData.push({mssv,name:safeName,has_face:s.has_face,email:s.email||'',registered_at:s.registered_at||''});
 }
 
 document.querySelector('#stat-users-approved .stat-value').textContent=_allUsersData.length;
@@ -626,7 +603,7 @@ window.deleteUserCard=function(mssv){
   releasePromise.then(()=>{
     // Ghi log xóa
     const logEntry={
-      delete_time:new Date().toLocaleString('vi-VN'),
+      delete_time:new Date().toLocaleString('sv-SE').slice(0,19),
       mssv,
       locker_id:userLocker?userLocker.locker_id:'—',
       reason:'admin_delete_card'
@@ -643,8 +620,8 @@ window.deleteUserCard=function(mssv){
 
 // ── CÀI ĐẶT TẬP TRUNG ────────────────────────────────────────────────────────
 let _cfg={
-  idleWarn:  parseInt(localStorage.getItem('cfg_idle_warn') ||'5',10),
-  idleAuto:  parseInt(localStorage.getItem('cfg_idle_auto') ||'7',10)
+  idleWarn:  parseInt(localStorage.getItem('cfg_idle_warn') ||'14',10),
+  idleAuto:  parseInt(localStorage.getItem('cfg_idle_auto') ||'16',10)
 };
 
 window.openSettingsModal=function(){
@@ -675,7 +652,6 @@ document.getElementById('user-detail-name').textContent=user.name;
 document.getElementById('user-detail-email').textContent=user.email||'—';
 document.getElementById('user-detail-regdate').textContent=user.registered_at||'—';
 document.getElementById('user-detail-face').textContent=user.has_face?'Đã có':'Chưa có';
-document.getElementById('user-detail-role').textContent=user.role;
 const userLocker=Object.values(_lockersData).find(l=>l.current_mssv===mssv);
 document.getElementById('user-detail-locker').textContent=userLocker?userLocker.locker_id:'Không có';
 document.getElementById('userModal').style.display='flex';
@@ -696,7 +672,7 @@ window.confirmAssignLocker=function(){
 const mssv=document.getElementById('assign-mssv').textContent;
 const lockerId=document.getElementById('locker-select').value;
 if(!lockerId){showToast('❌ Vui lòng chọn tủ');return}
-const nowStr=new Date().toISOString().slice(0,19).replace('T',' ');
+const nowStr=new Date().toLocaleString('sv-SE').slice(0,19);
 const user=_allUsersData.find(u=>u.mssv===mssv);
 update(ref(db,`lockers/${lockerId}`),{status:'occupied',current_mssv:mssv,last_open:nowStr,assigned_date:nowStr})
 .then(()=>push(ref(db,'locker_delete_logs'),{
@@ -720,7 +696,7 @@ const lockerId=userLocker.locker_id;
 update(ref(db,`lockers/${lockerId}`),{status:'empty',current_mssv:"",assigned_date:"",last_open:"",last_open_time:""})
 .then(()=>push(ref(db,'locker_delete_logs'),{
   mssv,locker_id:lockerId,
-  delete_time:new Date().toISOString().slice(0,19).replace('T',' '),
+  delete_time:new Date().toLocaleString('sv-SE').slice(0,19),
   reason:'admin_force'
 }))
 .then(()=>{
@@ -860,13 +836,12 @@ window.exportUsers = function() {
         showToast("❌ Không có dữ liệu để xuất");
         return;
     }
-    const headers = ['MSSV', 'Tên', 'Email', 'Khuôn Mặt', 'Vai Trò'];
+    const headers = ['MSSV', 'Tên', 'Email', 'Khuôn Mặt'];
     const rows = _allUsersData.map(s => [
         s.mssv, 
         `"${(s.name || '').replace(/"/g, '""')}"`, 
         `"${s.email || ''}"`,
-        s.has_face ? 'Đã có' : 'Chưa có', 
-        s.role
+        s.has_face ? 'Đã có' : 'Chưa có'
     ]);
     downloadCSV(`users_${new Date().toISOString().slice(0, 10)}.csv`, rows, headers);
 };
@@ -895,60 +870,6 @@ onValue(ref(db,'locker_delete_logs'),(snapshot)=>{
   const data=snapshot.val()||{};
   _allDeleteLogs=Object.values(data).sort((a,b)=>(b.delete_time||'').localeCompare(a.delete_time||''));
   _renderDeleteLogs(_allDeleteLogs);
-});
-
-// Release requests
-let _prevReleasePending=0;
-onValue(ref(db,'release_requests'),(snapshot)=>{
-  const data=snapshot.val()||{};
-  const tbody=document.getElementById('release-list');
-  const entries=Object.values(data).filter(r=>r&&r.mssv);
-  const pending=entries.filter(r=>r.status==='pending');
-
-  // Nav badge
-  const badge=document.getElementById('release-badge');
-  if(pending.length>0){badge.textContent=pending.length;badge.style.display='';}
-  else{badge.style.display='none';}
-
-  // Stat card Home tab
-  const statCard=document.getElementById('stat-release-pending');
-  const statVal=document.getElementById('stat-release-value');
-  if(statVal) statVal.textContent=pending.length;
-  if(statCard){
-    if(pending.length>0) statCard.classList.add('has-pending');
-    else statCard.classList.remove('has-pending');
-  }
-
-  // Toast khi có yêu cầu MỚI (bỏ qua lần load đầu tiên _prevReleasePending===0 và pending===0)
-  if(_prevReleasePending!==null && pending.length>_prevReleasePending){
-    const diff=pending.length-_prevReleasePending;
-    showToast(`🔔 Có ${diff} yêu cầu trả tủ mới — vào tab Trả Tủ để xử lý!`);
-    // Browser notification nếu được cấp quyền
-    if(Notification&&Notification.permission==='granted'){
-      new Notification('Smart Locker — Yêu cầu trả tủ',{
-        body:`${diff} sinh viên vừa gửi yêu cầu trả tủ.`,
-        icon:'logo_web.jpg'
-      });
-    }
-  }
-  _prevReleasePending=pending.length;
-
-  _pendingReleaseItems=pending;
-  _renderNotifBell();
-
-  if(!tbody) return;
-  if(!entries.length){
-    tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text4);padding:20px">Chưa có yêu cầu nào</td></tr>';
-    return;
-  }
-  tbody.innerHTML=entries.sort((a,b)=>(b.requested_at||'').localeCompare(a.requested_at||'')).map(r=>`
-    <tr style="${r.status==='pending'?'background:rgba(255,193,7,.08)':''}">
-      <td><strong>${r.mssv||'—'}</strong></td>
-      <td style="font-weight:bold">${r.locker_id||'—'}</td>
-      <td>${r.requested_at_display||r.requested_at||'—'}</td>
-      <td><span style="color:${r.status==='pending'?'var(--warning)':'var(--success)'};font-weight:600">${r.status==='pending'?'⏳ Chờ xử lý':'✅ Đã xử lý'}</span></td>
-      <td>${r.status==='pending'?`<button onclick="handleRelease('${r.mssv}','${r.locker_id}')" style="padding:5px 12px;background:var(--error);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:600">Xác nhận trả</button>`:'—'}</td>
-    </tr>`).join('');
 });
 
 // Đơn đăng ký (locker_requests) — chờ admin cấp tài khoản
@@ -1020,6 +941,9 @@ function _mailStatusFor(mssv){
     const log=_credentialEmailLog[mssv];
     let when='—';
     try{ when=new Date(log.sent_at).toLocaleString('vi-VN'); }catch(e){}
+    if(log.sent_via==='kiosk_sync_listener'){
+      return {label:'✉️ Đã gửi (Kiosk)', color:'var(--success)', title:`Gửi qua Kiosk lúc online — ${when}`};
+    }
     return {label:'✉️ Đã gửi (EmailJS)', color:'var(--success)', title:`Gửi lúc Kiosk offline — ${when}`};
   }
   return null; // chưa duyệt / chưa có gì để gửi
@@ -1149,7 +1073,6 @@ Chỉ thực hiện khi đã nhận đơn giấy có đủ chữ ký GVHD.`))ret
       password:passwordHash,
       is_first_login:true,
       has_face:false,
-      role:'student',
       locker_expiry_date:expiryISO,
       registered_at:nowStr
     });
@@ -1244,33 +1167,14 @@ document.getElementById('sidebar-overlay').classList.remove('show');
 }
 };
 
-// Điều hướng khi bấm 1 mục trong panel thông báo (trả tủ / đơn đăng ký)
+// Điều hướng khi bấm 1 mục trong panel thông báo (đơn đăng ký)
 window._notifGoTo=function(tabId){
   document.getElementById('notif-panel').classList.remove('open');
-  window.switchTab(tabId, document.getElementById(tabId==='tab-release'?'nav-release':'nav-locker-requests'));
+  window.switchTab(tabId, document.getElementById('nav-locker-requests'));
 };
 
 window.toggleSidebar=function(){document.getElementById('sidebar').classList.toggle('collapsed')};
 
-window.handleRelease=async function(mssv,lockerId){
-  if(!confirm(`Xác nhận trả tủ ${lockerId} cho sinh viên ${mssv}?
-Thao tác này sẽ giải phóng tủ và đánh dấu yêu cầu đã xử lý.`)) return;
-  try{
-    // Giải phóng tủ
-    await update(ref(db,`lockers/${lockerId}`),{status:'empty',current_mssv:'',assigned_date:'',last_open:'',last_open_time:''});
-    // Ghi log
-    await push(ref(db,'locker_delete_logs'),{
-      mssv,locker_id:lockerId,
-      delete_time:new Date().toLocaleString('vi-VN'),
-      reason:'student_release'
-    });
-    // Đánh dấu yêu cầu đã xử lý
-    await update(ref(db,`release_requests/${mssv}`),{status:'done',processed_at:new Date().toLocaleString('vi-VN')});
-    alert('✅ Đã xử lý trả tủ thành công!');
-  }catch(e){
-    alert('❌ Lỗi: '+e.message);
-  }
-};
 </script>
 </body>
 </html>

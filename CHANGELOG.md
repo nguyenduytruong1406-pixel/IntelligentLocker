@@ -4,6 +4,175 @@ Toàn bộ lịch sử thay đổi theo ngày, mới nhất ở trên.
 
 ---
 
+## [25/07/2026] — Rewrite `database.py` thành schema-driven; dọn Users; thêm cảnh báo/thu hồi tủ 4 giai đoạn
+
+### 🗄 `database.py` — bỏ ALTER TABLE tăng dần, chuyển sang 1 dict `SCHEMA` duy nhất
+
+**Vấn đề cũ:** `migrate()` chỉ biết `ALTER TABLE ADD COLUMN` từng cột liệt kê cứng, và giả định
+`Users`/`Lockers` đã tồn tại sẵn — chạy trên DB rỗng sẽ lỗi ngay từ `PRAGMA table_info`. Không có
+cách nào xoá cột hay đổi ràng buộc khoá ngoại mà không tự sửa tay DB.
+
+**Giải pháp:** `ensure_schema()` tự động:
+- Bảng chưa tồn tại → `CREATE TABLE` đầy đủ.
+- Bảng đã tồn tại, chỉ thiếu cột → `ALTER TABLE ADD COLUMN`.
+- Bảng có cột thừa cần xoá, hoặc ràng buộc khoá ngoại (`ON DELETE`) khác `SCHEMA` mong muốn →
+  **rebuild** (tạo bảng tạm đúng schema mới, copy dữ liệu — `COALESCE` các cột NOT NULL bị NULL từ
+  dữ liệu cũ về DEFAULT — xoá bảng cũ, đổi tên). Idempotent, test trên cả DB rỗng lẫn DB thật nhiều lần.
+
+Từ giờ đổi cấu trúc DB chỉ cần sửa dict `SCHEMA`, không viết ALTER tay nữa.
+
+### 🐛 Fix `FOREIGN KEY constraint failed` khi xoá `Users`
+
+`Lockers.current_mssv REFERENCES Users(mssv)` trước đây không có `ON DELETE`, nên xoá 1 `Users`
+đang giữ tủ sẽ bị chặn. Đổi thành `ON DELETE SET NULL` — xoá user tự trả tủ về trống.
+
+### 🗑 Dọn `Users` — bỏ 6 cột chết
+
+Bỏ `role`, `is_approved` (chưa từng có schema chính thức), `registered_at`, `warned_at`,
+`account_status`, `last_active_time` — toàn bộ thuộc luồng "chờ duyệt tài khoản" và "cảnh báo idle
+phiên đăng nhập 2h/5h" kiểu SML cũ, không còn dùng (tài khoản giờ chỉ tạo khi admin cấp trực tiếp).
+
+**Kéo theo dọn code phụ thuộc:**
+- `user_repository.py`: bỏ `update_account_status()`, `get_inactive_users()`, `mark_warned()`,
+  `mark_inactive()`, `delete_expired_users()`; bỏ `registered_at/account_status/role` khỏi INSERT
+  của `create_user()`/`register_user()`.
+- `cleanup_service.py`: bỏ `send_warning_email()`, `cleanup_users()`.
+- `cleanup_worker.py`, `sync_listener.py._cleanup_loop()`: bỏ lời gọi `cleanup_users()` tương ứng
+  (từng gây `AttributeError: 'CleanupService' object has no attribute 'cleanup_users'` sau khi xoá
+  hàm mà quên sửa nơi gọi — đã rà và sửa hết 2 chỗ gọi).
+- Phát hiện thêm: `sync_listener.py._cleanup_loop()` (chạy mỗi 1h) và `CleanupWorker` trong
+  `main.py` (chạy mỗi 60s) từng **cùng gọi chung 1 cleanup** — có thể race condition / gửi mail
+  thu hồi 2 lần. Xoá hẳn `_cleanup_loop()` khỏi `sync_listener.py`, chỉ giữ 1 nơi chạy cleanup.
+
+### 🔇 Fix sync im lặng khi lỗi — thêm `_safe_listener` cho `sync_listener.py`
+
+**Vấn đề:** `on_user_change`, `on_locker_change`, `on_pending_credentials` không có `try/except`
+bọc quanh — exception ném ra trong thread nền của Firebase SDK bị nuốt âm thầm, không in gì, không
+crash app, nhưng sự kiện đó (đăng ký mới / gán tủ) bị bỏ qua hoàn toàn. Đây là nguyên nhân của lỗi
+"đơn đăng ký/gán tủ không tới kiosk" mà console không hề báo gì.
+
+**Fix:** thêm decorator `_safe_listener` bọc cả 3 hàm — exception giờ in traceback đầy đủ ra
+console thay vì im lặng.
+
+### ⏰ Cảnh báo + thu hồi tủ — 4 giai đoạn (`cleanup_service.py`, `locker_repository.py`)
+
+Trước đây chỉ có 1 cơ chế: idle ≥14 ngày → thu hồi ngay (không cảnh báo trước). Giờ tách thành
+4 giai đoạn, chạy đủ trong `CleanupWorker` mỗi 60s:
+
+| Giai đoạn | Điều kiện | Hành động |
+|---|---|---|
+| `cleanup_idle_warning` | không mở tủ ≥ `IDLE_WARN_DAYS` (14) ngày, chưa cảnh báo | gửi mail, đánh dấu |
+| `cleanup_idle_lockers` | không mở tủ ≥ `IDLE_REVOKE_DAYS` (16) ngày | **thu hồi thật** (`auto_idle_locker`) |
+| `cleanup_expiry_warning` | còn ≤ `EXPIRY_WARN_DAYS` (2) ngày tới `locker_expiry_date`, chưa cảnh báo | gửi mail, đánh dấu |
+| `cleanup_expired_lockers` | đã qua `locker_expiry_date` | **thu hồi thật** (`auto_expired`) |
+
+Thêm 2 cột `Lockers.idle_warned_at` / `expiry_warned_at` để nhớ "đã cảnh báo chưa" cho lượt mượn
+hiện tại — reset về `NULL` khi `BORROW`/`RETURN` (cả 2 cột) và khi `OPEN` (chỉ `idle_warned_at`,
+vì mở tủ không kéo dài hạn mượn). Cả 2 mốc thu hồi thật không phụ thuộc đã cảnh báo hay chưa — tới
+hạn cứng là thu hồi, tránh trường hợp mail lỗi làm tủ không bao giờ được thu hồi.
+
+### 🕐 Fix `delete_time` sai định dạng — lệch giờ UTC + không sort được (`index.html`)
+
+**Vấn đề 1 — lệch múi giờ:** `confirmAssignLocker` (gán tủ) và `releaseUserLocker` (admin ép trả)
+dùng `new Date().toISOString()` — trả về **giờ UTC**, trong khi luồng gán tủ từ Kiosk lại dùng
+`toLocaleString('sv-SE')` (giờ địa phương). Cùng ghi `reason:'new_assignment'` nhưng lệch nhau 7
+tiếng tùy nguồn gốc bản ghi.
+
+**Vấn đề 2 — không sort được:** `deleteUserCard` (xóa thẻ) ghi `delete_time` bằng
+`toLocaleString('vi-VN')` → dạng `"00:38:17 25/7/2026"`, khác hình dạng hoàn toàn với 3 loại còn
+lại dạng `"2026-07-24 20:33:32"`. Bảng "Lịch Sử Thu Hồi Tủ" sort bằng `localeCompare` (so sánh
+chuỗi) nên trộn 2 định dạng khiến thứ tự hiển thị sai, dòng mới nhất có thể rớt xuống cuối.
+
+**Fix:** đồng nhất cả 3 chỗ ghi `delete_time` sang `new Date().toLocaleString('sv-SE').slice(0,19)`
+— giờ địa phương, dạng `YYYY-MM-DD HH:MM:SS` sortable, khớp với format Python (`_log_delete`) và
+luồng gán tủ Kiosk sẵn có.
+
+### 🏷 Dọn `_reasonMap` (`index.html`) — khớp đúng reason thật, bỏ field chết
+
+Trước đó `_reasonMap` có key `auto_inactive_7days`/`auto_inactive_14days` không khớp bất kỳ reason
+nào thật sự được ghi (`auto_idle_locker` mới đúng, do `cleanup_service.py` ghi), khiến log thu hồi
+idle hiện chuỗi raw thay vì text tiếng Việt. Đồng thời còn 2 field chết chưa từng được ghi ở đâu:
+`admin_deactivate`, `auto_expired_pending` (thuộc luồng "chờ duyệt" đã bỏ từ lâu).
+
+**Fix:** đổi `auto_idle_locker` đúng key, thêm `auto_expired` (thiếu — giai đoạn hết hạn mượn thật
+mới thêm), bỏ 2 field chết. Đồng bộ theo trong `README.md` (comment liệt kê `REASON` ở schema
+`LOCKER_DELETE_LOG`) và `sync_tool.py` (`_RELEASE_REASONS`, xem mục dưới).
+
+### 🔒 Đổi phiên đăng nhập Firebase Auth sang `browserSessionPersistence`
+
+**Vấn đề:** Firebase Auth mặc định `browserLocalPersistence` — phiên lưu vĩnh viễn trong trình
+duyệt tới khi bấm "Đăng xuất" rõ ràng. Vào thẳng `index.html` (bookmark, URL cũ, browser gợi ý) khi
+còn phiên cũ sẽ **tự động vào dashboard**, bỏ qua hẳn `login.html` — dễ gây cảm giác "nhảy cóc" qua
+bước đăng nhập, nhất là khi trước đó có bước landing page trung gian (đã bỏ, xem entry 23/07/2026).
+
+**Fix:** thêm `setPersistence(auth, browserSessionPersistence)` ngay sau `getAuth()` ở cả
+`login.html` và `index.html` — đóng trình duyệt/tab là mất phiên, lần sau bắt buộc đăng nhập lại.
+Phiên cũ tạo trước khi có fix này không tự mất — cần đăng xuất 1 lần để áp dụng đúng hành vi mới.
+
+### 📧 Fix cột "Gửi Mail" trống khi Kiosk tự gửi mật khẩu (`sync_listener.py`)
+
+**Vấn đề:** `on_pending_credentials()` — khi Kiosk online và gửi mail mật khẩu thành công, chỉ xóa
+`pending_credentials/{mssv}` chứ không ghi `credential_email_log/{mssv}` (khác với đường EmailJS-
+offline bên `index.html`, có ghi). Hàm `_mailStatusFor()` trên web chỉ biết 2 trạng thái: còn nằm
+trong `pending_credentials` (chờ gửi) hoặc có trong `credential_email_log` (đã gửi) — sau khi Kiosk
+xóa `pending_credentials`, cả 2 điều kiện đều sai → cột "Gửi Mail" hiện trống dù mail đã gửi thành công.
+
+**Fix:** ghi `credential_email_log/{mssv}` với `sent_via: "kiosk_sync_listener"` ngay sau khi gửi
+mail thành công. Web (`_mailStatusFor`) phân biệt nhãn theo `sent_via`: `✉️ Đã gửi (Kiosk)` vs
+`✉️ Đã gửi (EmailJS)`.
+
+### 🔁 Đồng bộ 2 chiều `LOCKER_DELETE_LOG` (`sync_tool.py`, `sync_listener.py`)
+
+**Vấn đề:** `locker_repository._log_delete()` (Kiosk) ghi SQLite rồi đẩy lên Firebase — nhưng
+`sync_tool.py.get_delete_logs()` chỉ **đọc** Firebase vào RAM để đối chiếu, chưa từng ghi ngược lại
+SQLite. Log tạo từ Web (`admin_force`, `admin_delete_card`, `new_assignment` gán từ web,
+`sync_auto_fix`) chỉ tồn tại trên Firebase — SQLite local của Kiosk không bao giờ có, thiếu lịch sử
+nếu sau này có màn hình Kiosk nào đọc trực tiếp bảng này.
+
+**Fix:**
+- `sync_tool.py` — thêm `pull_delete_logs()`, chạy trong `--pull`/`--sync` lúc boot: kéo toàn bộ
+  `locker_delete_logs` từ Firebase, chỉ `INSERT` bản ghi **chưa có** trong SQLite. Dedup theo bộ
+  (MSSV, LOCKER_ID, DELETE_TIME, REASON) — không cần lưu Firebase push-key.
+- `sync_listener.py` — thêm listener `on_delete_log_added` trên `/locker_delete_logs`, đồng bộ
+  realtime các log mới phát sinh trong lúc Kiosk đang chạy (không phải đợi lần boot sau).
+- `sync_tool.py._RELEASE_REASONS` — trước chỉ có `student_release` được coi là "trả tủ hợp lệ" để
+  tránh xóa nhầm locker vừa gán lại; giờ thêm `admin_force`, `auto_idle_locker`, `auto_expired` —
+  đều là các reason trả tủ thật, thiếu sẽ khiến logic chống-xóa-nhầm bỏ sót 3/4 trường hợp.
+
+### 🧑‍💼 `face_worker.py` — grace period cho mất box + pose gate chống góc nghiêng
+
+**Vấn đề 1 — reset liveness quá nhạy:** mỗi lần `center_face()` không thấy mặt dù chỉ 1 frame
+(chớp mắt, nhiễu IR thoáng qua, MediaPipe detect chập chờn trên ảnh IR) sẽ xóa sạch
+`liveness_window`/`confirm_count` — buộc tích lũy lại từ đầu. Log thực tế cho thấy detect mặt trên
+IR chập chờn liên tục kiểu "thấy 1 frame → mất 1 frame", khiến window gần như không bao giờ đầy dù
+đã tăng `LIVENESS_WINDOW` lên 9.
+
+**Fix:** thêm `BOX_LOST_GRACE` (số frame liên tiếp KHÔNG thấy mặt trước khi thật sự reset) — chỉ
+xóa `liveness_window`/`confirm_count` khi mất box đủ lâu, không phải ngay lập tức mất 1 frame đơn lẻ.
+
+**Vấn đề 2 — nhận diện sai khi đứng nghiêng:** liveness (rule-based mean/std/texture) chỉ kiểm tra
+da thật hay không, không quan tâm góc mặt — nên mặt nghiêng vẫn qua liveness bình thường (đúng thiết
+kế). Nhưng sau đó code chạy thẳng `embedding()`/match trên frame nghiêng đó luôn, trong khi dlib
+ResNet 128-D train chủ yếu trên mặt chính diện — embedding từ góc nghiêng mạnh cho `best_dist` không
+đáng tin (dao động 0.14–0.66 cho cùng 1 người trong log thực tế), làm cộng `fail_count` oan hướng
+tới lockout dù là chính chủ, chỉ đứng sai góc.
+
+**Fix:** thêm `_pose_ok(shape)` — heuristic không cần model riêng: so lệch vị trí mũi (landmark #30
+dlib) so với tâm 2 mắt (landmark #36, #45), chuẩn hóa theo khoảng cách 2 mắt. Vượt
+`POSE_MAX_OFFSET=0.35` → bỏ qua embedding/match cho frame đó (không tính fail, không reset liveness
+window), chờ frame chính diện hơn. Áp dụng cho cả `register` và `auth`.
+
+**Đã cân nhắc nhưng bỏ:** thêm "warm-up" (`REACQUIRE_GRACE`) miễn trừ vài frame fail đầu tiên ngay
+sau khi mặt tái xuất hiện (VD: sau khi dơ tay che mặt) — phát hiện làm mất tác dụng thật của
+`MAX_FAILS`, người sai vẫn được coi là "đang chờ" thay vì bị tính fail. Đã revert.
+
+**`ai/ai_utils.py`:** thử đổi `liveness()` sang CLAHE + tỉ lệ `std/mean` để giảm nhạy cảm với ánh
+sáng môi trường (nắng/tối bất thường) — sau khi xác nhận vấn đề thực tế không nằm ở ngưỡng liveness,
+đã **revert về bản gốc** (`BRIGHT_THRESHOLD=220`, `DARK_THRESHOLD=30`, `TEXTURE_MIN=8.0`, so mean/std
+tuyệt đối, không CLAHE).
+
+
+
 ## [23/07/2026] — Bỏ landing page 3-portal, chỉ còn luồng Admin; siết Firebase Rules
 
 ### 🗑️ Xóa `landing.html`, `register.html`, `user-dashboard.html`

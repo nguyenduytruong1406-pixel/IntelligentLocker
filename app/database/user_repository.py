@@ -92,30 +92,26 @@ class UserRepository:
         """Đăng ký qua kiosk SML — luồng cũ, không còn dùng ở main.py hiện tại
         (RegisterController đã bị bỏ) nhưng giữ lại phòng khi còn nơi gọi tới."""
         with self.db.connect() as conn:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             conn.execute(
                 """
-                INSERT INTO Users
-                (mssv, name, email, password, registered_at,
-                 account_status, role)
-                VALUES (?, ?, ?, ?, ?, 'ACTIVE', 'student')
+                INSERT INTO Users (mssv, name, email, password)
+                VALUES (?, ?, ?, ?)
                 """,
-                (mssv, name, email, password, now)
+                (mssv, name, email, password)
             )
             conn.commit()
 
     def register_user(self, mssv, name, email, password=None, role="student"):
-        """Đăng ký đầy đủ — dùng cho sync_listener khi pull từ Firebase."""
+        """Đăng ký đầy đủ — dùng cho sync_listener khi pull từ Firebase.
+        `role` không còn lưu ở DB (đã bỏ cột) — giữ tham số để không phải
+        sửa lại nơi gọi, nhưng giá trị bị bỏ qua."""
         with self.db.connect() as conn:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             conn.execute(
                 """
-                INSERT OR IGNORE INTO Users
-                (mssv, name, email, password, registered_at,
-                 account_status, role)
-                VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)
+                INSERT OR IGNORE INTO Users (mssv, name, email, password)
+                VALUES (?, ?, ?, ?)
                 """,
-                (mssv, name, email, password, now, role)
+                (mssv, name, email, password)
             )
             conn.commit()
 
@@ -164,19 +160,10 @@ class UserRepository:
 
     # ── Cập nhật trạng thái ───────────────────────────────────────────────────
 
-    def update_account_status(self, mssv, status="ACTIVE"):
-        with self.db.connect() as conn:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute(
-                """
-                UPDATE Users SET
-                    account_status  = ?,
-                    last_active_time = ?
-                WHERE mssv = ?
-                """,
-                (status, now, mssv)
-            )
-            conn.commit()
+    # NOTE: đã bỏ update_account_status() — dùng account_status/last_active_time,
+    # cả 2 cột đã bỏ khỏi schema Users cùng với luồng cảnh báo idle phiên đăng
+    # nhập (xem cleanup_idle_lockers trong cleanup_service.py — cơ chế thay thế
+    # dựa trên Lockers.last_open, không cần cột nào ở Users).
 
     # NOTE: đã xoá approve_user() — dead code từ khi còn khái niệm "chờ duyệt"
     # (is_approved). Tài khoản giờ chỉ được tạo khi admin cấp trực tiếp qua
@@ -236,51 +223,9 @@ class UserRepository:
 
     # ── Cleanup (giữ nguyên từ SML) ───────────────────────────────────────────
 
-    def get_inactive_users(self):
-        """User hoạt động > 2h trước, chưa cảnh báo, đang ACTIVE."""
-        with self.db.connect() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT email, mssv
-                FROM Users
-                WHERE datetime(last_active_time)
-                    < datetime('now','localtime','-2 hours')
-                AND warned_at IS NULL
-                AND account_status = 'ACTIVE'
-                AND last_active_time != ''
-                AND last_active_time IS NOT NULL
-            """)
-            return cursor.fetchall()
-
-    def mark_warned(self, mssv):
-        with self.db.connect() as conn:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute(
-                "UPDATE Users SET warned_at = ? WHERE mssv = ?", (now, mssv)
-            )
-            conn.commit()
-
-    def mark_inactive(self):
-        """Chuyển INACTIVE sau khi đã gửi mail cảnh báo."""
-        with self.db.connect() as conn:
-            conn.execute("""
-                UPDATE Users SET
-                    account_status = 'INACTIVE',
-                    warned_at      = NULL
-                WHERE account_status = 'ACTIVE'
-                AND datetime(last_active_time)
-                    < datetime('now','localtime','-2 hours')
-                AND warned_at IS NOT NULL
-            """)
-            conn.commit()
-
-    def delete_expired_users(self):
-        """Xóa user đã INACTIVE quá 5 giờ không hoạt động."""
-        with self.db.connect() as conn:
-            conn.execute("""
-                DELETE FROM Users
-                WHERE account_status = 'INACTIVE'
-                AND datetime(last_active_time)
-                    < datetime('now','localtime','-5 hours')
-            """)
-            conn.commit()
+    # NOTE: đã bỏ get_inactive_users() / mark_warned() / mark_inactive() /
+    # delete_expired_users() — toàn bộ dùng account_status, last_active_time,
+    # warned_at (đã bỏ khỏi schema Users). Đây là cơ chế "cảnh báo idle phiên
+    # đăng nhập" cũ từ SML; cleanup_service.cleanup_users() gọi các hàm này
+    # cũng đã bị bỏ theo. Cơ chế idle hiện tại là cleanup_idle_lockers()
+    # (dựa trên Lockers.last_open) — không cần cột nào ở Users.

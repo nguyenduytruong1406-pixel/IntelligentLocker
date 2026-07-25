@@ -9,7 +9,10 @@ Lắng nghe thay đổi từ Firebase → SQLite (realtime ~0ms):
 
 Daemon threads:
   _heartbeat_loop      — ghi /kiosk_status/last_seen mỗi 30s
-  _cleanup_loop        — auto-cleanup tủ idle mỗi 1h
+
+NOTE: cleanup tủ idle (cleanup_idle_lockers) KHÔNG chạy ở đây nữa — đã có
+CleanupWorker (QThread) trong main.py đảm nhiệm, tránh chạy trùng 2 nơi
+cùng lúc gây race condition / gửi email thu hồi tủ 2 lần.
 
 Chạy từ main.py:
     import sync_listener
@@ -23,6 +26,22 @@ import string
 import hashlib
 import smtplib
 import threading
+import traceback
+
+
+def _safe_listener(fn):
+    """Bọc callback .listen() — exception trong thread nền Firebase SDK trước
+    đây bị nuốt âm thầm (không in gì, không crash), khiến sự kiện bị bỏ qua
+    hoàn toàn mà không ai biết (đăng ký/gán tủ 'biến mất'). Giờ luôn in
+    traceback ra console để thấy được lỗi thật."""
+    def wrapper(event):
+        try:
+            return fn(event)
+        except Exception:
+            print(f"[SyncListener] ✗ Lỗi xử lý {fn.__name__} (path={getattr(event, 'path', '?')}):")
+            traceback.print_exc()
+    wrapper.__name__ = fn.__name__
+    return wrapper
 
 _stop_event = threading.Event()  # set khi app thoát
 from datetime import datetime, timezone, timedelta
@@ -275,6 +294,7 @@ def on_verify_attempt(event):
 #  FIREBASE LISTENERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+@_safe_listener
 def on_user_change(event):
     if event.path == "/":
         return
@@ -298,6 +318,10 @@ def on_user_change(event):
     email       = user_data.get("email", "")
     password_fb = user_data.get("password")
     has_face_fb = 1 if user_data.get("has_face") else 0
+    # locker_expiry_date: web ghi field này ngay khi admin cấp tài khoản/tủ —
+    # cần kéo về SQLite realtime để kiosk tính được ngày quá hạn tại chỗ,
+    # không phải chờ tới lần chạy sync_tool.py kế tiếp.
+    expiry_fb   = user_data.get("locker_expiry_date", "") or ""
     # None nếu Firebase chưa có field này (đa số trường hợp — kiosk là nguồn
     # xác thực). Chỉ override local khi Firebase có giá trị rõ ràng.
     fb_first_login = user_data.get("is_first_login")
@@ -305,7 +329,7 @@ def on_user_change(event):
 
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT has_face, password, is_first_login FROM Users WHERE mssv=?", (mssv,))
+        cur.execute("SELECT has_face, password, is_first_login, locker_expiry_date FROM Users WHERE mssv=?", (mssv,))
         row = cur.fetchone()
 
         if row:
@@ -314,16 +338,19 @@ def on_user_change(event):
             final_password   = password_fb if password_fb else current_password
             local_first_login = 1 if row[2] is None else int(row[2])
             final_first_login = int(bool(fb_first_login)) if fb_first_login is not None else local_first_login
+            # Firebase là nguồn xác thực cho hạn tủ — chỉ ghi đè khi có giá trị
+            final_expiry = expiry_fb if expiry_fb else (row[3] or "")
             cur.execute(
-                "UPDATE Users SET name=?, has_face=?, email=?, password=?, is_first_login=? WHERE mssv=?",
-                (name, merged_has_face, email, final_password, final_first_login, mssv)
+                "UPDATE Users SET name=?, has_face=?, email=?, password=?, is_first_login=?, "
+                "locker_expiry_date=? WHERE mssv=?",
+                (name, merged_has_face, email, final_password, final_first_login, final_expiry, mssv)
             )
         else:
             new_first_login = int(bool(fb_first_login)) if fb_first_login is not None else 1
             cur.execute(
-                "INSERT INTO Users (mssv, name, has_face, email, password, is_first_login) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (mssv, name, has_face_fb, email, password_fb, new_first_login)
+                "INSERT INTO Users (mssv, name, has_face, email, password, is_first_login, locker_expiry_date) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (mssv, name, has_face_fb, email, password_fb, new_first_login, expiry_fb)
             )
         conn.commit()
 
@@ -334,6 +361,7 @@ def on_user_change(event):
 #  PENDING_CREDENTIALS — Kiosk online tự gửi mail mật khẩu, rồi xóa node
 # ══════════════════════════════════════════════════════════════════════════════
 
+@_safe_listener
 def on_pending_credentials(event):
     if event.path == "/":
         return
@@ -370,8 +398,20 @@ def on_pending_credentials(event):
 
     if ok:
         db.reference(f"pending_credentials/{mssv}").delete()
+        # Ghi lại để web (index.html/_mailStatusFor) biết mail ĐÃ gửi — nếu không
+        # ghi bước này, sau khi pending_credentials bị xóa, cột "Gửi Mail" trên
+        # web sẽ không khớp điều kiện nào (không còn trong pending_credentials,
+        # cũng chưa có trong credential_email_log) và hiển thị trống dù mail đã
+        # gửi thành công.
+        db.reference(f"credential_email_log/{mssv}").set({
+            "locker_id": locker_id,
+            "expiry_date": expiry_date,
+            "sent_via": "kiosk_sync_listener",
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        })
 
 
+@_safe_listener
 def on_locker_change(event):
     if event.path == "/":
         return
@@ -424,6 +464,52 @@ def on_locker_change(event):
             print(f"[Sync] 📌 Gán tủ {lid} → {current_mssv} (lệnh từ Web)")
 
 
+@_safe_listener
+def on_delete_log_added(event):
+    """
+    Đồng bộ realtime locker_delete_logs (Firebase) → LOCKER_DELETE_LOG
+    (SQLite local). Bù cho sync_tool.py chỉ chạy 1 lần lúc boot — nếu
+    Kiosk chạy nhiều giờ không restart, log admin tạo từ web trong lúc đó
+    (admin_force, admin_delete_card, new_assignment từ web, sync_auto_fix)
+    sẽ không vào SQLite local kịp nếu chỉ trông vào sync_tool.py.
+
+    event.path == "/" là snapshot ban đầu lúc mới .listen() — bỏ qua vì
+    sync_tool.py đã lo phần lịch sử cũ lúc boot, ở đây chỉ xử lý entry MỚI
+    thêm sau đó (event.path = "/{firebase_push_key}").
+    """
+    if event.path == "/":
+        return
+    entry = event.data
+    if not isinstance(entry, dict):
+        return
+
+    mssv   = entry.get("mssv", "") or ""
+    lid    = entry.get("locker_id", "") or ""
+    dtime  = entry.get("delete_time", "") or ""
+    reason = entry.get("reason", "") or ""
+    if not dtime or not reason:
+        return
+
+    with get_conn() as conn:
+        # Dedup theo (MSSV, LOCKER_ID, DELETE_TIME, REASON) — nếu log này do
+        # chính Kiosk tạo (locker_repository._log_delete ghi SQLite rồi mới
+        # push lên Firebase), nó đã có sẵn ở đây, tránh ghi trùng.
+        exists = conn.execute(
+            """SELECT 1 FROM LOCKER_DELETE_LOG
+               WHERE MSSV=? AND LOCKER_ID=? AND DELETE_TIME=? AND REASON=?""",
+            (mssv, lid, dtime, reason),
+        ).fetchone()
+        if exists:
+            return
+        conn.execute(
+            """INSERT INTO LOCKER_DELETE_LOG (MSSV, LOCKER_ID, DELETE_TIME, REASON)
+               VALUES (?, ?, ?, ?)""",
+            (mssv, lid, dtime, reason),
+        )
+        conn.commit()
+        print(f"[Sync] 📜 Đồng bộ log thu hồi (từ Web): {mssv}/{lid} — {reason}")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  DAEMON THREADS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -436,17 +522,11 @@ def _heartbeat_loop():
         _stop_event.wait(30)
 
 
-def _cleanup_loop():
-    """Auto-cleanup tủ idle ≥7 ngày — chạy mỗi 1 giờ."""
-    from app.services.cleanup_service import CleanupService
-    svc = CleanupService()
-    while not _stop_event.is_set():
-        try:
-            svc.cleanup_users()
-        except Exception as e:
-            print(f"[CleanupLoop] Lỗi: {e}")
-        _stop_event.wait(3_600)
-
+# NOTE: đã xoá _cleanup_loop() — trước đây gọi cleanup_idle_lockers() mỗi 1h
+# song song với CleanupWorker (QThread) trong main.py, gây race condition
+# (2 thread cùng đọc/ghi Lockers gần như đồng thời -> có thể gửi email thu
+# hồi tủ 2 lần cho cùng 1 sinh viên). Giữ đúng 1 nơi cleanup duy nhất là
+# CleanupWorker trong main.py.
 
 # NOTE: đã xoá _check_pending_expire() và _pending_expire_loop() — toàn bộ
 # cơ chế quét/tự xóa/tự cảnh báo tài khoản "chờ duyệt quá hạn" không còn cần
@@ -472,13 +552,13 @@ def start():
             db.reference("otp_requests").listen(on_otp_request)
             db.reference("verify_attempts").listen(on_verify_attempt)
             db.reference("pending_credentials").listen(on_pending_credentials)
-            print("[SyncListener] 📡 Listeners: users / lockers / otp_requests / verify_attempts")
+            db.reference("locker_delete_logs").listen(on_delete_log_added)
+            print("[SyncListener] 📡 Listeners: users / lockers / otp_requests / verify_attempts / locker_delete_logs")
         except Exception as e:
             print(f"[SyncListener] ✗ Lỗi khởi động listeners: {e}")
 
-    threading.Thread(target=_heartbeat_loop,      daemon=True).start()
-    threading.Thread(target=_cleanup_loop,        daemon=True).start()
-    print("[SyncListener] 🔄 Daemon threads: heartbeat / cleanup")
+    threading.Thread(target=_heartbeat_loop, daemon=True).start()
+    print("[SyncListener] 🔄 Daemon thread: heartbeat")
 
 
 if __name__ == "__main__":
