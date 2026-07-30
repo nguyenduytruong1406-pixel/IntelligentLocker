@@ -1,0 +1,145 @@
+function onFormSubmitAndSendEmail(e) {
+  var responses = e.response.getItemResponses();
+
+  // 1. KHỞI TẠO BỘ DỮ LIỆU TỰ ĐỘNG
+  // Lưu ý: Đặt mặc định là chuỗi rỗng "". Nếu sinh viên không điền (nhóm ít người), hệ thống sẽ tự động xóa trắng chỗ đó trên file Word.
+  var data = {
+    khoa: "", detai: "", gvhd: "", size: "", begin: "", end: "",
+    hoten01: "", mssv01: "", dt1: "", email01: "",
+    hoten02: "", mssv02: "", dt2: "", email02: "",
+    hoten03: "", mssv03: "", dt3: "", email03: ""
+  };
+
+  // 2. ĐỌC DỮ LIỆU TỪ FORM VÀ LẤP VÀO BỘ DỮ LIỆU
+  // Hãy sửa lại các chuỗi trong ngoặc kép includes(...) sao cho chứa một phần tên câu hỏi trên Google Form của bạn.
+  for (var i = 0; i < responses.length; i++) {
+    var question = responses[i].getItem().getTitle();
+    var answer = responses[i].getResponse();
+
+    // Thông tin chung
+    if (question.includes("Khoa")) data.khoa = answer;
+    else if (question.includes("Đề tài")) data.detai = answer;
+    else if (question.includes("GVHD")) data.gvhd = answer;
+    else if (question.includes("Kích thước tủ")) data.size = answer;
+    else if (question.includes("Ngày bắt đầu mượn tủ ") || question.includes("Từ ngày")) data.begin = answer;
+    else if (question.includes("Ngày trả tủ ") || question.includes("Đến ngày")) data.end = answer;
+
+    // Trưởng nhóm (Thành viên 1)
+    else if (question.includes("Họ và tên ( trưởng nhóm )") || question.includes("Họ tên 1")) data.hoten01 = answer;
+    else if (question.includes("MSSV ( trưởng nhóm )") || question.includes("MSSV 1")) data.mssv01 = answer;
+    else if (question.includes("SĐT ( trưởng nhóm )") || question.includes("Điện thoại 1")) data.dt1 = answer;
+    else if (question.includes("Email ( trưởng nhóm )") || question.includes("Email 1")) data.email01 = answer;
+
+    // Thành viên 2
+    else if (question.includes("Họ và tên thành viên 2")) data.hoten02 = answer;
+    else if (question.includes("MSSV thành viên 2")) data.mssv02 = answer;
+    else if (question.includes("SĐT thành viên 2")) data.dt2 = answer;
+    else if (question.includes("Email thành viên 2")) data.email02 = answer;
+
+    // Thành viên 3
+    else if (question.includes("Họ và tên thành viên 3")) data.hoten03 = answer;
+    else if (question.includes("MSSV thành viên 3")) data.mssv03 = answer;
+    else if (question.includes("SĐT thành viên 3")) data.dt3 = answer;
+    else if (question.includes("Email thành viên 3")) data.email03 = answer;
+  }
+
+  // 3. KẾT NỐI VỚI FILE DOCS
+  var TEMPLATE_DOC_ID = '12LW2LR5ikfvYhFY1iQhdaHp86j4zkdnyQQx0VA3kT3I'; 
+  var TARGET_FOLDER_ID = '1sN0GMn9CReuTrvtNY52hTLyfReri_E_g'; 
+
+  var templateDoc = DriveApp.getFileById(TEMPLATE_DOC_ID);
+  var targetFolder = DriveApp.getFolderById(TARGET_FOLDER_ID);
+
+  var newFileName = "Đơn mượn tủ - " + data.mssv01 + " - " + data.hoten01;
+  var tempFile = templateDoc.makeCopy(newFileName, targetFolder);
+  var tempDoc = DocumentApp.openById(tempFile.getId());
+  var body = tempDoc.getBody();
+
+  // 4. ĐIỀN DỮ LIỆU THÔNG MINH
+  
+  // Xử lý cột STT: Nếu có tên thành viên thì tự động điền số 1, 2, 3. Nếu không có thì để trống.
+  body.replaceText("{{01}}", data.hoten01 !== "" ? "1" : "");
+  body.replaceText("{{02}}", data.hoten02 !== "" ? "2" : "");
+  body.replaceText("{{03}}", data.hoten03 !== "" ? "3" : "");
+
+  // Vòng lặp siêu tốc: Tự động quét toàn bộ bộ dữ liệu và thay thế vào {{...}}
+  for (var key in data) {
+    body.replaceText("{{" + key + "}}", data[key]);
+  }
+  
+  tempDoc.saveAndClose();
+
+  // 5. XUẤT PDF VÀ GỬI MAIL CHO TRƯỞNG NHÓM
+  var pdfBlob = tempFile.getAs(MimeType.PDF);
+
+  if (data.email01 !== "") {
+    var subject = "[Smart Locker] Đơn đăng ký mượn tủ của nhóm " + data.hoten01;
+    var emailBody = "Chào " + data.hoten01 + ",\n\n" +
+                    "Hệ thống đã tự động tạo Đơn xin mượn tủ dựa trên thông tin nhóm bạn vừa cung cấp.\n" +
+                    "Vui lòng TẢI FILE PDF ĐÍNH KÈM, in ra, lấy đủ chữ ký của các thành viên và GVHD, sau đó nộp lại cho Ban quản lý Makerspace.\n\n" +
+                    "Trân trọng,\nHệ thống Smart Locker.";
+
+    MailApp.sendEmail({
+      to: data.email01,
+      subject: subject,
+      body: emailBody,
+      attachments: [pdfBlob]
+    });
+  }
+
+  // Dọn dẹp bản nháp Google Docs, chỉ để lại PDF (Bỏ comment dòng dưới nếu muốn tự động xóa docs nháp)
+  tempFile.setTrashed(true); 
+  // --- ĐẨY DỮ LIỆU LÊN FIREBASE BẰNG OAUTH2 ---
+  var firebaseData = {
+    mssv: data.mssv01,
+    name: data.hoten01,
+    email: data.email01,
+    khoa: data.khoa,
+    begin_date: data.begin,      // ← thêm
+    end_date: data.end,          // ← thêm
+    size_requested: data.size,
+    requested_at: new Date().toISOString(),
+    status: "pending"
+  };
+
+  if (data.mssv01 !== "") {
+    var service = getFirebaseService();
+    
+    // Kiểm tra xem đã tạo token thành công chưa
+    if (service.hasAccess()) {
+      var requestUrl = FIREBASE_DB_URL + "/locker_requests/" + data.mssv01 + ".json";
+      
+      var options = {
+        method: "put",
+        contentType: "application/json",
+        headers: {
+          // Gắn Token bảo mật vào Header thay vì để lộ trên URL
+          Authorization: 'Bearer ' + service.getAccessToken() 
+        },
+        payload: JSON.stringify(firebaseData),
+        muteHttpExceptions: true
+      };
+
+      var response = UrlFetchApp.fetch(requestUrl, options);
+      Logger.log("Đã đẩy dữ liệu: " + response.getContentText());
+    } else {
+      Logger.log("Lỗi xác thực Firebase: " + service.getLastError());
+    }
+  }
+}
+function getFirebaseService() {
+  var props = PropertiesService.getScriptProperties();
+  var clientEmail = props.getProperty('FIREBASE_CLIENT_EMAIL');
+  var privateKey = props.getProperty('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n');
+
+  return OAuth2.createService('Firebase')
+      .setTokenUrl('https://oauth2.googleapis.com/token')
+      .setPrivateKey(privateKey)
+      .setIssuer(clientEmail)
+      .setPropertyStore(PropertiesService.getScriptProperties())
+      .setScope('https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email');
+}
+var FIREBASE_DB_URL = "https://lockerxmakerspacexhcmute-default-rtdb.asia-southeast1.firebasedatabase.app";
+function capQuyen() {
+  UrlFetchApp.fetch("https://google.com");
+}

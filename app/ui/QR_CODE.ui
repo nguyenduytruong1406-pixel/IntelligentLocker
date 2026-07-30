@@ -17,8 +17,8 @@
    <widget class="QPushButton" name="back_b">
     <property name="geometry">
      <rect>
-      <x>680</x>
-      <y>420</y>
+      <x>660</x>
+      <y>470</y>
       <width>161</width>
       <height>61</height>
      </rect>
@@ -38,48 +38,26 @@
      </size>
     </property>
    </widget>
-   <widget class="QTextBrowser" name="khung_tb">
-    <property name="geometry">
-     <rect>
-      <x>540</x>
-      <y>50</y>
-      <width>450</width>
-      <height>341</height>
-     </rect>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">QTextBrowser {
-    font-family: &quot;Segoe UI&quot;, Arial, sans-serif; /* Font chữ hiện đại, dễ đọc */
-    font-size: 18px;                           /* Cỡ chữ vừa phải */
-    color: #333333;                            /* Màu chữ xám đậm (đỡ mỏi mắt hơn màu đen tuyền) */
-    line-height: 150%;                         /* Giãn dòng giúp văn bản thông thoáng */
-    padding: 15px;                             /* Tạo khoảng trống giữa chữ và viền (Cực kỳ quan trọng!) */
-    background-color: rgb(255, 255, 255);                 /* Nền trắng sạch sẽ */
-    border: 1px solid rgb(188, 200, 243);                 /* Viền mỏng, nhẹ nhàng nhã nhặn */
-    border-radius: 10px;                        /* Bo góc nhẹ để hợp với style các nút bấm của bạn */
-}</string>
-    </property>
-    <property name="html">
-     <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Segoe UI,Arial,sans-serif'; font-size:18px; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p align=&quot;justify&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'MS Shell Dlg 2'; font-size:12pt; font-weight:600; color:#00aaff;&quot;&gt;Bước 1:&lt;/span&gt;&lt;span style=&quot; font-family:'MS Shell Dlg 2'; font-size:12pt;&quot;&gt; Scan QR code và nhập đầy đủ thông tin của nhóm.&lt;/span&gt;&lt;/p&gt;
-&lt;p align=&quot;justify&quot; style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'MS Shell Dlg 2'; font-size:12pt;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p align=&quot;justify&quot; style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'MS Shell Dlg 2'; font-size:12pt;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p align=&quot;justify&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'MS Shell Dlg 2'; font-size:12pt; font-weight:600; color:#00aaff;&quot;&gt;Bước 2:&lt;/span&gt;&lt;span style=&quot; font-family:'MS Shell Dlg 2'; font-size:12pt;&quot;&gt; Sau khi điền form bạn sẽ nhận được mail đính kèm đơn đăng kí mượn tủ, hãy in đơn này ra và đem cho GVHD ký, sau đó đem nộp tại MakerSpace.&lt;/span&gt;&lt;/p&gt;
-&lt;p align=&quot;justify&quot; style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'MS Shell Dlg 2'; font-size:12pt;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p align=&quot;justify&quot; style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'MS Shell Dlg 2'; font-size:12pt;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p align=&quot;justify&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'MS Shell Dlg 2'; font-size:12pt; font-weight:600; color:#00aaff;&quot;&gt;Bước 3:&lt;/span&gt;&lt;span style=&quot; font-family:'MS Shell Dlg 2'; font-size:12pt;&quot;&gt; Chờ mail phản hồi từ MakerSpace, ban quản lý sẽ cấp tủ và tài khoản, mật khẩu cho nhóm.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-    </property>
-   </widget>
    <widget class="QLabel" name="qr_code">
     <property name="geometry">
      <rect>
-      <x>30</x>
-      <y>30</y>
-      <width>500</width>
-      <height>500</height>
+      <x>70</x>
+      <y>10</y>
+      <width>441</width>
+      <height>441</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QLabel" name="huongdan">
+    <property name="geometry">
+     <rect>
+      <x>530</x>
+      <y>10</y>
+      <width>431</width>
+      <height>441</height>
      </rect>
     </property>
     <property name="text">

@@ -44,6 +44,15 @@ class QRController(QMainWindow):
                 Qt.TransformationMode.SmoothTransformation
             )
         )
+        pixmap1 = QPixmap(str(BASE_DIR / "assets/icon/dki_muon_tu.PNG"))
+
+        self.huongdan.setPixmap(
+            pixmap1.scaled(
+                self.huongdan.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+        )
 
         # EVENT
         self.back_b.clicked.connect(self.go_to_begin)
