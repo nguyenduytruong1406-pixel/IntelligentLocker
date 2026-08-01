@@ -10,9 +10,15 @@
 
 ```bash
 # 1. Cài thư viện Python
-py -3.11 -m pip install PyQt6 opencv-python numpy dlib mediapipe \
-    firebase-admin scikit-image python-dotenv winsdk
+# 1. Cài dlib TRƯỚC bằng wheel dựng sẵn (KHÔNG để pip tự build từ source —
+#    sẽ lỗi "Failed building wheel for dlib" trên Windows do thiếu cmake/
+#    Visual Studio Build Tools)
+py -3.11 -m pip install dlib-bin
 
+# 2. Cài các thư viện còn lại
+py -3.11 -m pip install PyQt6 opencv-python numpy mediapipe  
+py -3.11 -m pip install firebase-admin scikit-image python-dotenv winsdk
+py -3.11 -m pip install face_recognition_models 
 # 2. Tạo file môi trường
 cp .env.example app_password.env
 # → Điền MAIL_SENDER, MAIL_PASSWORD, MAIL_SENDER_NAME
@@ -214,6 +220,19 @@ Firebase ◄──────────────────────�
 > boot) kéo bù toàn bộ lịch sử cũ, `sync_listener.py` (`on_delete_log_added`)
 > đồng bộ realtime các log mới phát sinh trong lúc Kiosk đang chạy. Dedup theo
 > bộ (MSSV, LOCKER_ID, DELETE_TIME, REASON), không cần lưu Firebase push-key.
+
+> **Reconnect watchdog + catch-up (từ 31/07/2026):** trước đây các listener
+> `.listen()` chỉ đăng ký đúng 1 lần lúc boot — mất mạng (lúc khởi động hoặc
+> giữa lúc chạy) làm thread nền chết âm thầm, sync "biến mất" cho tới khi
+> restart app. `sync_listener.py` giờ có `_watchdog_loop()` (daemon, mỗi 20s)
+> tự phát hiện + đăng ký lại listener chết. Mỗi lần vừa khôi phục sau mất
+> mạng, tự chạy thêm 2 bước bù (vì `.listen()` chỉ báo sự kiện *mới* kể từ
+> lúc reconnect, không "phát lại" những gì đã xảy ra lúc offline):
+> - `sync_tool.py --sync` (subprocess riêng) — bù `users`/`lockers`/
+>   `locker_delete_logs` bị lỡ.
+> - `_catchup_pending_credentials()` — quét lại toàn bộ `pending_credentials`
+>   còn treo, gửi mail mật khẩu bị lỡ lúc offline (khác `sync_tool.py`,
+>   không xử lý node này).
 
 ### Luồng OTP trả tủ (server-side verify)
 
@@ -599,6 +618,7 @@ py -3.11 sync_tool.py --push    # Chỉ SQLite → Firebase
 | 09/07 | **Đổi mô hình đăng ký tài khoản**: QR tại Kiosk → Google Form → PDF xin chữ ký GVHD → admin duyệt thủ công · thêm node Firebase `locker_requests` · thêm tab Web "Đơn Đăng Ký" (tìm kiếm + cấp tài khoản) · Google Apps Script tự xuất PDF + gửi mail + ghi Firebase qua OAuth2 Service Account · fix rò rỉ private key (chuyển sang Script Properties) |
 | 22/07 | **Fix lockout xác thực khuôn mặt không có tác dụng thật**: `lockout_until` được gán nhưng không bao giờ đọc lại → chuyển sang lưu ở `Session.face_lockout` (theo mssv, sống ngoài vòng đời `FaceWorker`) · dừng hẳn worker + tự quay về màn chọn hình thức xác thực khi bị khóa (`lockout_active` signal) thay vì chờ tại chỗ · fix `UnboundLocalError` do import `Session` cục bộ thừa làm shadow biến module-level |
 | 25/07 | **Web Admin — hàng loạt fix nhỏ đi kèm cảnh báo/thu hồi 4 giai đoạn**: `index.html` — fix `delete_time` lệch giờ UTC (`toISOString()`) và sai định dạng `vi-VN` không sort được → đồng nhất `toLocaleString('sv-SE')` (giờ VN, sortable); `_reasonMap` khớp đúng reason thật + bỏ field chết; login/dashboard đổi `browserSessionPersistence`; nhãn "Gửi Mail" phân biệt Kiosk/EmailJS · `sync_listener.py` — ghi `credential_email_log` khi Kiosk tự gửi mật khẩu (trước đây không ghi, cột "Gửi Mail" luôn trống); thêm listener `on_delete_log_added` đồng bộ realtime `locker_delete_logs` Firebase → SQLite · `sync_tool.py` — thêm `pull_delete_logs()` kéo bù lịch sử cũ lúc boot, `_RELEASE_REASONS` bổ sung `admin_force`/`auto_idle_locker`/`auto_expired` (trước chỉ có `student_release`) · **`face_worker.py`** — thêm `BOX_LOST_GRACE` (không reset liveness/confirm khi mất box chỉ 1 frame chập chờn) và `_pose_ok()` pose gate (bỏ qua embedding/match khi mặt nghiêng quá `POSE_MAX_OFFSET`, tránh cộng oan `fail_count`); thử rồi revert CLAHE + tỉ lệ std/mean trong `ai_utils.liveness()` (vấn đề thực tế không nằm ở ngưỡng liveness) |
+| 31/07 | **`sync_listener.py` — tự khôi phục sau mất mạng**: fix root cause (thread nền SSE chết âm thầm khi reconnect thất bại lúc mạng vẫn chưa có, không log/không tự phục hồi) · thêm `_watchdog_loop()` (daemon, 20s) tự đăng ký lại listener chết · sau khi khôi phục, tự chạy `sync_tool.py --sync` (subprocess) bù `users`/`lockers`/`locker_delete_logs` bị lỡ · thêm `_catchup_pending_credentials()` quét lại `pending_credentials` còn treo, gửi mail mật khẩu bị lỡ lúc offline (node này `sync_tool.py` không xử lý) · fix `UnicodeEncodeError` (cp1252) khi subprocess con in ký tự `✅/✗/⚠` trên Windows — ép `PYTHONIOENCODING=utf-8` |
 
 > Chi tiết từng thay đổi xem tại [`CHANGELOG.md`](./CHANGELOG.md)
 

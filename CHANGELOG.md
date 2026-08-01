@@ -4,6 +4,54 @@ Toàn bộ lịch sử thay đổi theo ngày, mới nhất ở trên.
 
 ---
 
+## [31/07/2026] — `sync_listener.py`: tự khôi phục kết nối sau mất mạng + bù dữ liệu/mail bị lỡ
+
+### 🐛 Vấn đề: mất mạng có lại, sync "biến mất" — phải tắt/mở lại app mới chạy tiếp
+
+Trước đây `start()` chỉ đăng ký `db.reference(...).listen(...)` **đúng 1 lần** lúc app khởi động.
+Đào sâu vào source thật của `firebase-admin` SDK (`_sseclient.py` / `db.py`) phát hiện: khi kết nối
+SSE bị đứt do mất mạng, SDK tự gọi lại `self._connect()` để nối lại — nhưng nếu **đúng lúc đó mạng
+vẫn chưa có**, exception từ `_connect()` không được bắt ở đâu cả → **thread nền chết âm thầm, không
+log, không traceback**. Từ đó sync im re, kể cả khi mạng có lại sau đó, vì không còn ai gọi lại
+`.listen()`. Cùng lỗi nếu mất mạng ngay lúc `start()` chạy lần đầu (listener đầu tiên ném lỗi → toàn
+bộ các listener sau trong khối `try` không được đăng ký luôn, không chỉ riêng 1 cái).
+
+### ✅ Fix: watchdog thread tự phát hiện + đăng ký lại listener chết
+
+Thêm `_LISTENER_SPECS` + `_listener_regs` (theo dõi từng listener), `_register_missing_listeners()`
+(đăng ký/đăng ký lại listener nào đang thiếu — an toàn gọi lặp lại) và `_watchdog_loop()` (daemon
+thread, kiểm tra mỗi 20s). `start()` giờ khởi động thêm thread watchdog này thay vì chỉ đăng ký 1
+lần. Kết quả: mất mạng bất kỳ lúc nào, tối đa ~20s sau khi mạng có lại, listener tự hồi phục — không
+cần restart app.
+
+### ✅ Fix: bù dữ liệu Users/Lockers bị lỡ trong lúc mất mạng
+
+`.listen()` chỉ báo sự kiện **mới** kể từ lúc kết nối lại — snapshot đầu tiên khi vừa reconnect
+(`event.path == "/"`) bị mọi callback `on_*_change` cố tình bỏ qua (đúng cho lúc khởi động bình
+thường, nhưng có nghĩa các thay đổi diễn ra *trong* lúc offline không có event nào bắn ra cả).
+`_register_missing_listeners()` giờ phân biệt "đăng ký lần đầu" và "vừa khôi phục sau khi chết"; nếu
+là khôi phục → tự chạy `sync_tool.py --sync` (đúng logic đối soát 2 chiều SQLite ↔ Firebase mà tool
+này vẫn dùng lúc boot) trong 1 subprocess riêng, không block thread hiện tại.
+
+### ✅ Fix: mail mật khẩu (`pending_credentials`) không bị treo vĩnh viễn
+
+`sync_tool.py --sync` không đụng tới `pending_credentials`, nên nếu web ghi credential mới **đúng
+lúc kiosk mất mạng**, mail sẽ không bao giờ được gửi (cùng lý do snapshot ban đầu bị bỏ qua ở trên) —
+khác với `otp_requests`/`verify_attempts` (có hạn 5 phút, xử lý trễ vô nghĩa), `pending_credentials`
+không có hạn nên xử lý trễ vẫn đúng. Tách logic gửi mail từ `on_pending_credentials` ra hàm dùng
+chung `_process_pending_credential(mssv)`, thêm `_catchup_pending_credentials()` — đọc lại toàn bộ
+node `pending_credentials` 1 lần, xử lý mọi mssv còn sót (idempotent). Gọi tự động mỗi khi có
+listener nào được đăng ký (lần đầu boot hoặc khôi phục).
+
+### 🐛 Fix `UnicodeEncodeError` khi chạy `sync_tool.py --sync` qua subprocess trên Windows
+
+Khi `subprocess.run(..., capture_output=True)` chạy `sync_tool.py`, stdout của process con là pipe
+(không phải console thật) — Windows mặc định encode theo codepage hệ thống (`cp1252`) thay vì UTF-8,
+trong khi `firebase_config.py`/`sync_tool.py` in ký tự `✅`/`✗`/`⚠` → crash ngay từ bước `import`.
+Ép `PYTHONIOENCODING=utf-8` + `PYTHONUTF8=1` vào biến môi trường của subprocess con.
+
+---
+
 ## [25/07/2026] — Rewrite `database.py` thành schema-driven; dọn Users; thêm cảnh báo/thu hồi tủ 4 giai đoạn
 
 ### 🗄 `database.py` — bỏ ALTER TABLE tăng dần, chuyển sang 1 dict `SCHEMA` duy nhất

@@ -1,30 +1,36 @@
 """
 sync_listener.py — Firebase Websocket Realtime listener (SML edition).
-
+ 
 Lắng nghe thay đổi từ Firebase → SQLite (realtime ~0ms):
   /users           → on_user_change
   /lockers         → on_locker_change
   /otp_requests    → on_otp_request   (sinh OTP trả tủ, gửi mail)
   /verify_attempts → on_verify_attempt (server-side SHA-256 verify)
-
+ 
 Daemon threads:
   _heartbeat_loop      — ghi /kiosk_status/last_seen mỗi 30s
-
+  _watchdog_loop        — mỗi 20s, tự đăng ký lại listener bị chết do mất mạng;
+                           sau khi khôi phục, tự chạy sync_tool.py --sync (bù
+                           users/lockers/locker_delete_logs) và quét bù
+                           pending_credentials (mail mật khẩu bị lỡ lúc offline)
+ 
 NOTE: cleanup tủ idle (cleanup_idle_lockers) KHÔNG chạy ở đây nữa — đã có
 CleanupWorker (QThread) trong main.py đảm nhiệm, tránh chạy trùng 2 nơi
 cùng lúc gây race condition / gửi email thu hồi tủ 2 lần.
-
+ 
 Chạy từ main.py:
     import sync_listener
     sync_listener.start()
 """
 
 import os
+import sys
 import time
 import random
 import string
 import hashlib
 import smtplib
+import subprocess
 import threading
 import traceback
 
@@ -361,12 +367,11 @@ def on_user_change(event):
 #  PENDING_CREDENTIALS — Kiosk online tự gửi mail mật khẩu, rồi xóa node
 # ══════════════════════════════════════════════════════════════════════════════
 
-@_safe_listener
-def on_pending_credentials(event):
-    if event.path == "/":
-        return
-    mssv = event.path.strip("/").split("/")[0]
-
+def _process_pending_credential(mssv: str):
+    """Xử lý gửi mail mật khẩu cho 1 mssv trong /pending_credentials.
+    Dùng chung cho on_pending_credentials (event realtime) VÀ
+    _catchup_pending_credentials (quét bù lúc vừa khôi phục mạng) — cùng 1
+    logic, tránh lệch nhau giữa 2 đường gọi."""
     cred = db.reference(f"pending_credentials/{mssv}").get()
     if cred is None:
         return  # đã xử lý/xóa rồi (hoặc bị xóa tay)
@@ -409,6 +414,44 @@ def on_pending_credentials(event):
             "sent_via": "kiosk_sync_listener",
             "sent_at": datetime.now(timezone.utc).isoformat(),
         })
+
+
+@_safe_listener
+def on_pending_credentials(event):
+    if event.path == "/":
+        return
+    mssv = event.path.strip("/").split("/")[0]
+    _process_pending_credential(mssv)
+
+
+def _catchup_pending_credentials():
+    """
+    VẤN ĐỀ: nếu web ghi /pending_credentials/{mssv} ĐÚNG LÚC kiosk mất mạng,
+    node đó vẫn nằm nguyên trên Firebase, chưa gửi mail. Khi mạng có lại và
+    listener .listen() được đăng ký lại, event ĐẦU TIÊN nhận được là snapshot
+    toàn bộ (event.path == "/") — bị on_pending_credentials cố tình bỏ qua.
+    Vì node không có ghi (write) MỚI nào sau khi kết nối lại, sẽ KHÔNG có
+    event nào khác bắn ra cho mssv đó nữa → mail bị treo vĩnh viễn nếu không
+    quét bù.
+
+    Khác với otp_requests/verify_attempts (có hạn 5 phút — xử lý trễ vô
+    nghĩa, không cần bù), pending_credentials KHÔNG có hạn — xử lý trễ vẫn
+    đúng, nên an toàn để đọc lại toàn bộ node 1 lần và xử lý những gì còn sót.
+    Idempotent: _process_pending_credential tự return sớm nếu mssv đã được
+    xử lý/xóa từ trước, gọi lại nhiều lần không sao.
+    """
+    if not FIREBASE_OK or db is None:
+        return
+    try:
+        snap = db.reference("pending_credentials").get() or {}
+    except Exception as e:
+        print(f"[Credentials] ✗ Không đọc được pending_credentials để quét bù: {e}")
+        return
+    if not snap:
+        return
+    print(f"[Credentials] 🔄 Phát hiện {len(snap)} pending_credentials còn treo — xử lý bù...")
+    for mssv in list(snap.keys()):
+        _process_pending_credential(mssv)
 
 
 @_safe_listener
@@ -522,6 +565,136 @@ def _heartbeat_loop():
         _stop_event.wait(30)
 
 
+# ── Reconnect watchdog ─────────────────────────────────────────────────────────
+# VẤN ĐỀ: db.Reference.listen() chạy 1 thread nền đọc SSE stream. Khi mạng đứt
+# giữa chừng, SDK tự bắt lỗi và gọi lại self._connect() để nối lại — nhưng nếu
+# NGAY LÚC ĐÓ mạng vẫn chưa có, self._connect() tự nó ném exception, và
+# exception này không được bắt ở đâu cả (xem _sseclient.py / db.py của
+# firebase-admin) → thread nền chết âm thầm, không log gì. Từ đó sync im luôn,
+# kể cả khi mạng có lại sau đó, vì không còn ai gọi lại .listen(). Cùng lỗi này
+# xảy ra nếu mất mạng NGAY LÚC start() chạy lần đầu (listen() đầu tiên ném lỗi
+# → toàn bộ khối try trong start() dừng giữa chừng, các listener sau đó không
+# được đăng ký luôn, không chỉ riêng 1 cái).
+#
+# _LISTENER_SPECS liệt kê mọi listener cần có. _listener_regs giữ
+# ListenerRegistration hiện tại của từng cái (hoặc None nếu chưa từng đăng ký
+# thành công). _watchdog_loop() chạy mỗi 20s, kiểm tra thread nền
+# (registration._thread) của từng listener còn sống hay không — nếu chết
+# (hoặc chưa từng đăng ký được) thì gọi lại .listen() để hồi phục, không cần
+# restart app / chạy lại file.
+_LISTENER_SPECS = [
+    ("users",               "users",               "on_user_change"),
+    ("lockers",             "lockers",             "on_locker_change"),
+    ("otp_requests",        "otp_requests",        "on_otp_request"),
+    ("verify_attempts",     "verify_attempts",     "on_verify_attempt"),
+    ("pending_credentials", "pending_credentials", "on_pending_credentials"),
+    ("locker_delete_logs",  "locker_delete_logs",  "on_delete_log_added"),
+]
+_listener_regs: dict = {}  # name -> ListenerRegistration | None
+
+
+def _listener_alive(name: str) -> bool:
+    reg = _listener_regs.get(name)
+    if reg is None:
+        return False
+    thread = getattr(reg, "_thread", None)
+    return thread is not None and thread.is_alive()
+
+
+def _run_catchup_sync():
+    """
+    VẤN ĐỀ: khi 1 listener vừa được đăng ký lại sau khi mất mạng, event đầu
+    tiên SDK gửi là 1 snapshot toàn bộ dữ liệu (event.path == "/") — nhưng
+    MỌI callback on_*_change đều cố tình `return` ngay khi gặp event này
+    (đúng cho lúc khởi động bình thường, để khỏi xử lý lại y hệt dữ liệu cũ).
+    Hệ quả: .listen() chỉ báo sự kiện MỚI kể từ lúc kết nối lại — những thay
+    đổi diễn ra TRONG khoảng thời gian mất mạng (web gán tủ, admin xóa tài
+    khoản, sinh viên trả tủ...) sẽ không có event nào bắn ra cả, nên bị bỏ
+    lỡ vĩnh viễn nếu không có bước bù riêng.
+
+    FIX: chạy lại đúng logic đối soát 2 chiều mà sync_tool.py vẫn dùng lúc
+    boot (`python sync_tool.py --sync` = pull Firebase→SQLite rồi push
+    SQLite→Firebase) trong 1 subprocess riêng — không import trực tiếp vì
+    sync_tool.py có code chạy ngay ở module-level (mở connection SQLite
+    riêng, có thể sys.exit(0)), an toàn hơn khi để nó chạy độc lập như 1
+    tool, đúng như thiết kế ban đầu của nó.
+    """
+    def _worker():
+        try:
+            print("[SyncListener] 🔄 Vừa khôi phục mạng — chạy sync_tool.py --sync để bù dữ liệu bị lỡ...")
+            # QUAN TRỌNG (Windows): khi stdout bị capture_output=True redirect
+            # sang pipe (không còn là console thật), Python trên Windows mặc
+            # định encode theo codepage hệ thống (thường là cp1252) thay vì
+            # UTF-8 — mà firebase_config.py/sync_tool.py có in ký tự ✅/✗/⚠,
+            # không tồn tại trong cp1252 → UnicodeEncodeError, crash ngay từ
+            # bước import. Ép PYTHONIOENCODING=utf-8 cho process con để nó
+            # luôn ghi stdout/stderr bằng UTF-8 bất kể console cha là gì.
+            child_env = os.environ.copy()
+            child_env["PYTHONIOENCODING"] = "utf-8"
+            child_env["PYTHONUTF8"] = "1"
+            result = subprocess.run(
+                [sys.executable, str(BASE_DIR / "sync_tool.py"), "--sync"],
+                cwd=str(BASE_DIR),
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env=child_env, timeout=120,
+            )
+            if result.returncode == 0:
+                print("[SyncListener] ✅ sync_tool --sync hoàn tất (đã bù dữ liệu bị lỡ lúc mất mạng)")
+            else:
+                tail = (result.stderr or result.stdout)[-2000:]
+                print(f"[SyncListener] ✗ sync_tool --sync lỗi (exit {result.returncode}):\n{tail}")
+        except Exception as e:
+            print(f"[SyncListener] ✗ Không chạy được sync_tool --sync: {e}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def _register_missing_listeners():
+    """Đăng ký (hoặc đăng ký lại) mọi listener hiện đang thiếu/chết. An toàn để
+    gọi lặp lại nhiều lần — listener đang sống bình thường sẽ được bỏ qua.
+
+    - Có listener nào vừa được đăng ký (lần đầu HOẶC khôi phục) → quét bù
+      pending_credentials (_catchup_pending_credentials) — rẻ, idempotent,
+      nên chạy cả lúc khởi động lần đầu cho chắc, không chỉ lúc khôi phục.
+    - Có listener nào vừa được KHÔI PHỤC (chứ không phải lần đăng ký đầu
+      tiên) → coi như vừa trải qua 1 lần mất mạng → tự chạy catch-up sync
+      (xem _run_catchup_sync) để bù dữ liệu Users/Lockers bị lỡ lúc offline."""
+    if not FIREBASE_OK or db is None:
+        return
+    g = globals()
+    recovered_from_outage = False
+    registered_this_cycle = False
+    for name, path, callback_name in _LISTENER_SPECS:
+        if _listener_alive(name):
+            continue
+        callback = g[callback_name]
+        was_registered_before = name in _listener_regs
+        try:
+            _listener_regs[name] = db.reference(path).listen(callback)
+            verb = "🔁 Đã khôi phục" if was_registered_before else "📡 Đã đăng ký"
+            print(f"[SyncListener] {verb} listener '{name}'")
+            registered_this_cycle = True
+            if was_registered_before:
+                recovered_from_outage = True
+        except Exception as e:
+            _listener_regs[name] = None
+            print(f"[SyncListener] ✗ Chưa kết nối được listener '{name}' ({e}) — thử lại sau")
+
+    if registered_this_cycle:
+        threading.Thread(target=_catchup_pending_credentials, daemon=True).start()
+    if recovered_from_outage:
+        _run_catchup_sync()
+
+
+def _watchdog_loop():
+    """Vòng lặp nền: định kỳ kiểm tra + tự đăng ký lại listener bị chết do mất
+    mạng. Đây là cơ chế thay thế cho việc phải tắt/mở lại app (chạy lại file)
+    mỗi khi mạng chập chờn."""
+    while not _stop_event.is_set():
+        _register_missing_listeners()
+        _stop_event.wait(20)
+
+
 # NOTE: đã xoá _cleanup_loop() — trước đây gọi cleanup_idle_lockers() mỗi 1h
 # song song với CleanupWorker (QThread) trong main.py, gây race condition
 # (2 thread cùng đọc/ghi Lockers gần như đồng thời -> có thể gửi email thu
@@ -542,23 +715,20 @@ def start():
     """
     Đăng ký Firebase listeners + khởi động daemon threads.
     Fail-safe: Firebase offline → bỏ qua listeners, daemon threads vẫn chạy.
+
+    Việc đăng ký listener lúc khởi động và việc TỰ ĐĂNG KÝ LẠI khi mất mạng
+    dùng chung 1 đường code (_register_missing_listeners / _watchdog_loop) —
+    tránh trường hợp mất mạng giữa chừng làm listener chết mà không ai hồi
+    phục lại (xem giải thích chi tiết ở phần "Reconnect watchdog" phía trên).
     """
     if not FIREBASE_OK or db is None:
         print("[SyncListener] ⚠ Firebase offline — chỉ chạy daemon threads")
     else:
-        try:
-            db.reference("users").listen(on_user_change)
-            db.reference("lockers").listen(on_locker_change)
-            db.reference("otp_requests").listen(on_otp_request)
-            db.reference("verify_attempts").listen(on_verify_attempt)
-            db.reference("pending_credentials").listen(on_pending_credentials)
-            db.reference("locker_delete_logs").listen(on_delete_log_added)
-            print("[SyncListener] 📡 Listeners: users / lockers / otp_requests / verify_attempts / locker_delete_logs")
-        except Exception as e:
-            print(f"[SyncListener] ✗ Lỗi khởi động listeners: {e}")
+        _register_missing_listeners()
 
+    threading.Thread(target=_watchdog_loop, daemon=True).start()
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
-    print("[SyncListener] 🔄 Daemon thread: heartbeat")
+    print("[SyncListener] 🔄 Daemon threads: heartbeat + reconnect watchdog")
 
 
 if __name__ == "__main__":
