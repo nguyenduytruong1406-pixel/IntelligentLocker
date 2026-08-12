@@ -296,3 +296,56 @@ class LockerRepository:
                 """
             )
             return cursor.fetchall()
+
+
+#   ************************************************************************ #
+#   ********************** GỬI THÔNG BÁO ĐÓNG TỦ *************************** #
+#   ************************************************************************ #
+
+    def get_open_lockers(self):
+        """Lấy các tủ đang mở quá 5 phút chưa đóng"""
+        with self.db.connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT l.locker_id, l.mssv, l.timestamp, u.email
+                FROM LockerLog l
+                JOIN Users u ON l.mssv = u.mssv
+                WHERE l.event = 'OPEN'
+                AND l.door_closed_at IS NULL
+
+                AND l.warned_door IS NULL 
+
+                AND datetime(l.timestamp) 
+                    < datetime('now', 'localtime', '-1 minutes')
+                ORDER BY l.timestamp DESC
+            """)
+            return cursor.fetchall()
+
+    def mark_door_warned(self, locker_id):
+        """Đánh dấu đã gửi mail → không gửi lại"""
+        with self.db.connect() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("""
+                UPDATE LockerLog
+                SET warned_door = ?
+                WHERE locker_id = ?
+                AND event = 'OPEN'
+                AND door_closed_at IS NULL
+                AND warned_door IS NULL
+            """, (now, locker_id))
+            conn.commit()
+
+    def mark_door_closed(self, locker_id):
+        """Cập nhật thời gian đóng tủ khi nhận tín hiệu từ ESP32"""
+        with self.db.connect() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("""
+                UPDATE LockerLog
+                SET door_closed_at = ?
+                WHERE locker_id = ?
+                AND event = 'OPEN'
+                AND door_closed_at IS NULL
+            """, (now, locker_id))
+            conn.commit()

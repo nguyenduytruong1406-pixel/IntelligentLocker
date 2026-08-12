@@ -128,3 +128,22 @@ class LockerService:
             return False, "Hiện không có tủ trống!"
 
         return True, "OK"
+
+
+
+
+#   ************************************************************************ #
+#   ********************** GỬI THÔNG BÁO ĐÓNG TỦ *************************** #
+#   ************************************************************************ #
+
+    def on_door_closed(self, locker_number: int):
+        """
+        Được gọi khi ESP32 emit locker_closed signal
+        → Cập nhật door_closed_at vào DB
+        """
+        locker_id = f"L{locker_number:02d}"
+        self.locker_repo.mark_door_closed(locker_id)
+        print(f"[LockerService] Tủ {locker_id} đã đóng")
+
+
+    

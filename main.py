@@ -32,6 +32,8 @@ sync_listener.start()
 # ── 4. GUI ────────────────────────────────────────────────────────────────────
 from PyQt6.QtWidgets import QApplication, QStackedWidget
 from PyQt6.QtCore    import QTimer, QObject, QEvent
+from app.services.auth_service import AuthService
+from app.controllers.door_monitor_worker import DoorMonitorWorker
 
 from app.controllers.login_controller           import LoginController
 from app.controllers.begin_controller           import BeginController
@@ -57,7 +59,7 @@ from app.nav import PAGES
 
 app = QApplication(sys.argv)
 cleanup_service = CleanupService()
-
+auth_service   = AuthService()
 
 # ── Load QSS ──────────────────────────────────────────────────────────────────
 def load_global_style():
@@ -168,6 +170,21 @@ run_cleanup()
 timer_cleanup.start(60_000)
 
 
+# ── DoorMonitorWorker chạy nền — kiểm tra tủ quên đóng ──────────────────────
+door_monitor_worker = None
+
+def run_door_monitor():
+    global door_monitor_worker
+    if door_monitor_worker and door_monitor_worker.isRunning():
+        return
+    door_monitor_worker = DoorMonitorWorker(auth_service)
+    door_monitor_worker.start()
+
+timer_door = QTimer()
+timer_door.timeout.connect(run_door_monitor)
+timer_door.start(60_000)  # Kiểm tra mỗi 1 phút
+
+
 # ── Window ────────────────────────────────────────────────────────────────────
 stacked_widget.setFixedSize(1024, 600)
 stacked_widget.setCurrentIndex(PAGES["video"])   # bắt đầu từ màn hình video
@@ -191,6 +208,13 @@ def on_quit():
         pass
     if cleanup_worker and cleanup_worker.isRunning():
         cleanup_worker.wait(3000)
+        
+    try:
+        timer_door.stop()  # ← Thêm dòng này
+    except Exception:
+        pass
+    if door_monitor_worker and door_monitor_worker.isRunning():
+        door_monitor_worker.wait(3000)  # ← Thêm dòng này
 
 app.aboutToQuit.connect(on_quit)
 

@@ -68,7 +68,7 @@ SCHEMA = {
         ("locker_id",     "TEXT", "PRIMARY KEY",          None),
         ("size",          "TEXT", "NOT NULL",             "TEXT NOT NULL DEFAULT ''"),
         ("status",        "TEXT", "NOT NULL DEFAULT 'empty'", "TEXT NOT NULL DEFAULT 'empty'"),
-        ("current_mssv",  "TEXT", "REFERENCES Users(mssv) ON DELETE SET NULL",  "TEXT REFERENCES Users(mssv) ON DELETE SET NULL"),
+        ("current_mssv",  "TEXT", "UNIQUE REFERENCES Users(mssv) ON DELETE SET NULL",  "TEXT UNIQUE REFERENCES Users(mssv) ON DELETE SET NULL"),
         ("assigned_date", "TEXT", "",  "TEXT"),
         ("last_open",     "TEXT", "",  "TEXT"),
         # idle_warned_at: đã gửi mail cảnh báo idle (ngày 14) cho lượt mượn
@@ -85,6 +85,12 @@ SCHEMA = {
         ("locker_id", "TEXT",    "REFERENCES Lockers(locker_id)", "TEXT REFERENCES Lockers(locker_id)"),
         ("mssv",      "TEXT",    "",                              "TEXT"),
         ("name",      "TEXT",    "",                              "TEXT"),
+        # door_closed_at: thời điểm ESP32 xác nhận cửa đã đóng thật sự
+        # (tín hiệu CLOSED:xx) — NULL nghĩa là chưa đóng / chưa nhận tín hiệu.
+        ("door_closed_at", "TEXT", "DEFAULT NULL", "TEXT DEFAULT NULL"),
+        # warned_door: thời điểm đã gửi mail cảnh báo quên đóng tủ cho lượt
+        # mở hiện tại — NULL nghĩa là chưa gửi, dùng để tránh gửi lặp lại.
+        ("warned_door",    "TEXT", "DEFAULT NULL", "TEXT DEFAULT NULL"),
     ],
     "FaceLog": [
         ("id",        "INTEGER", "PRIMARY KEY AUTOINCREMENT", None),
@@ -103,7 +109,6 @@ SCHEMA = {
 }
 
 INDEXES = [
-    "CREATE INDEX IF NOT EXISTS idx_lockers_current_mssv   ON Lockers(current_mssv)",
     "CREATE INDEX IF NOT EXISTS idx_lockerlog_mssv          ON LockerLog(mssv)",
     "CREATE INDEX IF NOT EXISTS idx_lockerlog_locker_id     ON LockerLog(locker_id)",
     "CREATE INDEX IF NOT EXISTS idx_facelog_mssv            ON FaceLog(mssv)",

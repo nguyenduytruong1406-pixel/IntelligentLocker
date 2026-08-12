@@ -353,8 +353,19 @@ def pull_lockers(dry_run: bool = False):
         sq_assigned = row["assigned_date"]
         sq_last_open = row["last_open"] or ""
 
-        # last_open: lấy giá trị mới hơn (string so sánh được vì cùng format datetime)
-        final_last_open = max(sq_last_open, fb_last_open) if sq_last_open else fb_last_open
+        # BUG FIX: tủ đã được trả/xóa trên Firebase (status="empty" →
+        # last_open cũng bị xóa về "" bên đó) — trước đây nhánh này luôn
+        # lấy max(sq_last_open, fb_last_open), mà chuỗi rỗng "" luôn nhỏ
+        # hơn 1 chuỗi datetime cũ, nên last_open RÁC ở SQLite không bao giờ
+        # bị xóa, rồi push() kế tiếp còn đẩy ngược giá trị rác đó lên lại
+        # Firebase. Khi Firebase báo "empty", coi đó là nguồn xác thực và
+        # xóa last_open thẳng, không so sánh — khớp đúng logic
+        # on_locker_change() trong sync_listener.py.
+        if fb_status == "empty":
+            final_last_open = ""
+        else:
+            # last_open: lấy giá trị mới hơn (string so sánh được vì cùng format datetime)
+            final_last_open = max(sq_last_open, fb_last_open) if sq_last_open else fb_last_open
 
         changed = (
             sq_status != fb_status

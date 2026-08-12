@@ -4,6 +4,25 @@ Toàn bộ lịch sử thay đổi theo ngày, mới nhất ở trên.
 
 ---
 
+## [12/08/2026] — Làm rõ: tủ cấp lần đầu chưa từng mở vẫn được tính vào cơ chế cảnh báo idle
+
+### 📝 Không phải bug mới, chỉ ghi nhận lại hành vi đã có sẵn từ 25/07
+
+Rà lại `locker_repository.py::set_status_locker()` (BORROW — chạy khi admin duyệt đơn và cấp tủ)
+xác nhận: `last_open` được set bằng thời điểm cấp tủ (`now`) ngay từ đầu, **không để `NULL`**. Vì
+`get_lockers_needing_idle_warning()` / `get_idle_lockers()` (thêm ở đợt rewrite 25/07/2026) đều lấy
+mốc idle từ `last_open`, nên một tủ được cấp nhưng sinh viên **không bao giờ ra kiosk mở lần nào**
+vẫn tự động bị tính idle kể từ đúng thời điểm cấp — nhận mail cảnh báo sau `IDLE_WARN_DAYS` (14
+ngày), bị thu hồi thật sau `IDLE_REVOKE_DAYS` (16 ngày) — giống hệt xử lý một tủ đã dùng rồi bỏ quên,
+không cần thêm nhánh logic riêng cho trường hợp "cấp lần đầu không dùng tới".
+
+### ✅ Cập nhật tài liệu
+
+- `README.md` — thêm ghi chú vào mục "Cleanup 4 giai đoạn" giải thích rõ hành vi này.
+- `CHANGELOG.md` — entry này.
+
+---
+
 ## [31/07/2026] — `sync_listener.py`: tự khôi phục kết nối sau mất mạng + bù dữ liệu/mail bị lỡ
 
 ### 🐛 Vấn đề: mất mạng có lại, sync "biến mất" — phải tắt/mở lại app mới chạy tiếp

@@ -36,6 +36,10 @@ class SelectModeController(QMainWindow):
     # ── ESC → về màn hình chính (thay cho nút Home hiển thị — kiosk công khai
     #    không nên có nút thoát rõ ràng, ESC chỉ dành cho người biết bấm) ──────
 
+        # Connect signal locker_closed từ ESP32     
+        self.locker_service.esp32.locker_closed.connect(
+            self.locker_service.on_door_closed
+        )
 
         
         # 1. Gom danh sách các nút bằng tên biến logic riêng biệt (Không lo bị trùng)

@@ -39,6 +39,7 @@ except ImportError:
 from app.config import SERIAL_PORT, SERIAL_BAUDRATE
 
 _OPENED_PATTERN = re.compile(r"^OPENED:(\d+)$")
+_CLOSED_PATTERN = re.compile(r"^CLOSED:(\d+)$")
 
 # Dòng banner ESP32 in ra MỖI KHI setup() chạy — nếu dòng này xuất hiện lại
 # giữa chừng (không phải lúc mới bật app) tức là ESP32 vừa TỰ RESET (thường do
@@ -54,6 +55,7 @@ class ESP32LockerClient(QObject):
 
     # Phát ra khi nhận được "OPENED:xx" hợp lệ từ ESP32 — tham số là số tủ (int)
     locker_opened = pyqtSignal(int)
+    locker_closed = pyqtSignal(int)  # ← Thêm mới
 
     _instance = None
     _instance_lock = threading.Lock()
@@ -207,6 +209,13 @@ class ESP32LockerClient(QObject):
                 locker_number = int(match.group(1))
                 print(f"[{_ts()}] [ESP32] Nhận xác nhận: OPENED:{locker_number:02d}")
                 self.locker_opened.emit(locker_number)
+                continue
+            # **************** NEW **********************#
+            match_closed = _CLOSED_PATTERN.match(line)
+            if match_closed:
+                locker_number = int(match_closed.group(1))
+                print(f"[{_ts()}] [ESP32] Nhận xác nhận: CLOSED:{locker_number:02d}")
+                self.locker_closed.emit(locker_number)
             else:
                 # Log MỌI dòng khác (log debug, lỗi lệnh...) để dễ chẩn đoán —
                 # trước đây bị bỏ qua âm thầm nên không biết ESP32 có gửi gì không.

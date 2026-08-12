@@ -131,31 +131,37 @@ SML/
 
 ```
 BeginController (Idle)
-  └─ nhập MSSV ──────────────────────────────────► LoginController
-                                                        │
-                                              AuthMethodController
-                                              ┌──────────┴──────────┐
-                                         Khuôn mặt            Mật khẩu
-                                              │                     │
-                                        FaceController      PasswordController
-                                        (mode=auth)               │
-                                         ┌────┴────┐              │
-                                    has_face    no_face           │
-                                         │          │             │
-                                    xác thực    FaceController    │
-                                    khuôn mặt  (mode=register)   │
-                                         │                        │
-                                         └──────────┬─────────────┘
-                                                    ▼
-                                           SelectModeController
-                                           ┌────────┴────────┐
-                                      Chưa có tủ        Đã có tủ
-                                           │                 │
-                                  SelectLockerController  ┌──┴──┐
-                                  (chọn tủ trống)       Mở   Trả
-                                           │             tủ    tủ
-                                     gán tủ → open
+  └─ đăng nhập (MSSV + mật khẩu) ──────────────────► LoginController
+                                                            │
+                                            is_first_login? ──có──► ChangePassController
+                                                            │không
+                                            có tủ chưa?  ──chưa──► báo lỗi, ở lại Login
+                                                            │có
+                                                  AuthMethodController
+                                                  ┌──────────┴──────────┐
+                                             Khuôn mặt                 OTP
+                                                  │                      │
+                                            FaceController         SendOtpController
+                                            (mode=auth)                  │
+                                             ┌────┴────┐          EnterOtpController
+                                        has_face    no_face              │
+                                             │          │                │
+                                        xác thực    FaceController       │
+                                        khuôn mặt   (mode=register)      │
+                                             │          │                │
+                                             └──────────┴───────┬────────┘
+                                                                 ▼
+                                                       SelectModeController
+                                                       ┌────────┴────────┐
+                                                  Chưa có tủ         Đã có tủ
+                                                       │                  │
+                                            Ẩn nút Mở/Trả, báo         ┌──┴──┐
+                                            liên hệ admin cấp tủ     Mở   Trả
+                                            (tự chọn tủ đã bỏ —      tủ    tủ
+                                             admin cấp sẵn khi duyệt đơn)
 ```
+
+> **Lưu ý:** Đăng nhập yêu cầu **cả MSSV lẫn mật khẩu** (`LoginController.login_account()` gọi `auth_service.mssv_pass(user, pw)`), không phải chỉ MSSV. `AuthMethodController` là lớp xác thực **thứ hai**, cho chọn giữa **khuôn mặt hoặc OTP** — không còn lựa chọn "mật khẩu" ở bước này (`PasswordController` đã bị loại khỏi luồng, xem comment trong `auth_method_controller.py`). Nhánh "chưa có tủ" cũng không còn dẫn tới `SelectLockerController` — mô hình tự chọn tủ đã được thay bằng admin cấp tủ sẵn khi duyệt đơn đăng ký (xem `select_mode.py::_update_buttons()`).
 
 ### Pipeline AI (FaceWorker — QThread)
 
@@ -234,28 +240,6 @@ Firebase ◄──────────────────────�
 >   còn treo, gửi mail mật khẩu bị lỡ lúc offline (khác `sync_tool.py`,
 >   không xử lý node này).
 
-### Luồng OTP trả tủ (server-side verify)
-
-```
-Web client              Firebase              sync_listener.py
-    │                      │                        │
-    │── otp_requests/{m} ──►│                        │
-    │                      │──── on_otp_request ───►│
-    │                      │                        │ sinh OTP
-    │                      │                        │ lưu SHA-256(OTP) → otp_tokens
-    │                      │                        │ gửi OTP gốc qua email
-    │                      │                        │
-    │  [user nhập OTP]     │                        │
-    │── verify_attempts ───►│                        │
-    │                      │──── on_verify_attempt ►│
-    │                      │                        │ so sánh hash
-    │                      │                        │ rate limit (max 5 lần)
-    │                      │◄── verify_results ─────│
-    │◄── onValue ──────────│                        │
-    │   {ok, reason}       │                        │
-```
-
-> Client **không bao giờ đọc** `otp_tokens` — chỉ server biết hash.
 
 ### Luồng đăng ký tài khoản mới (QR → Google Form → PDF ký tay → admin duyệt)
 
@@ -376,13 +360,15 @@ Lockers (
                                             -- idle_warned_at còn reset khi OPEN (mở tủ = hết idle)
 
 LockerLog (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    event     TEXT NOT NULL,             -- OPEN_LOCKER
-    locker_id TEXT REFERENCES Lockers(locker_id),
-    mssv      TEXT,
-    name      TEXT
-)
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp      TEXT NOT NULL,
+    event          TEXT NOT NULL,             -- OPEN_LOCKER
+    locker_id      TEXT REFERENCES Lockers(locker_id),
+    mssv           TEXT,
+    name           TEXT,
+    door_closed_at TEXT DEFAULT NULL,     -- ESP32 xác nhận cửa đã đóng thật (CLOSED:xx) cho lượt mở này
+    warned_door    TEXT DEFAULT NULL      -- đã gửi mail cảnh báo quên đóng tủ cho lượt mở này chưa
+)                                         -- local-only — không đồng bộ lên Firebase, xem Sync Rules
 
 FaceLog (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -420,6 +406,22 @@ LOCKER_DELETE_LOG (
 > Cả 2 mốc thu hồi thật đều không phụ thuộc đã cảnh báo hay chưa — tới hạn cứng là
 > thu hồi. Nếu 1 tủ vừa idle quá hạn vừa hết hạn mượn cùng lúc, `cleanup_idle_lockers`
 > chạy trước sẽ thu hồi trước nên không bị xử lý/gửi mail 2 lần.
+>
+> **Tủ mới cấp nhưng chưa từng mở cũng được tính vào idle:** `set_status_locker()`
+> (`locker_repository.py`, chạy lúc admin duyệt đơn / BORROW) set `last_open = now`
+> ngay tại thời điểm cấp tủ, không để `NULL`. Vì `get_lockers_needing_idle_warning()`
+> / `get_idle_lockers()` đều tính mốc idle dựa trên `last_open`, nên nếu sinh viên
+> được cấp tủ nhưng không bao giờ ra kiosk mở tủ lần nào, đồng hồ idle vẫn tự chạy
+> từ đúng thời điểm cấp — sau `IDLE_WARN_DAYS` (14 ngày) sẽ nhận cảnh báo, sau
+> `IDLE_REVOKE_DAYS` (16 ngày) sẽ bị thu hồi, y hệt một tủ đã dùng rồi bỏ quên.
+> Không cần cơ chế riêng cho trường hợp "cấp tủ lần đầu không dùng" — nó tự động
+> rơi vào đúng luồng cảnh báo/thu hồi idle sẵn có.
+>
+> **Cảnh báo quên đóng tủ** (`door_closed_at`/`warned_door` ở `LockerLog`, timer nền
+> riêng, kiểm tra mỗi 1 phút): khi mở tủ ghi 3 điều kiện — đã mở > 5 phút, chưa
+> nhận tín hiệu `CLOSED:xx` từ ESP32 (`door_closed_at` còn NULL), chưa gửi mail
+> (`warned_door` còn NULL) — thì gửi mail sinh viên và đánh dấu `warned_door`. Sau
+> 15 phút kể từ lúc đánh dấu mà vẫn chưa đóng thì gửi thêm mail cho quản lý tủ.
 >
 > **`Service_engineer_log`** (log kỹ thuật viên) không còn được `database.py`
 > quản lý (không tự tạo/sửa cột nữa) — nếu DB cũ còn bảng này thì vẫn giữ nguyên,
@@ -497,6 +499,7 @@ LOCKER_DELETE_LOG (
 | `name` | Firebase thắng |
 | `has_face`, `face_embedding` | Local thắng (biometric không bị ghi đè từ web) |
 | `Lockers.last_open` | Lấy giá trị **mới hơn** (ISO string compare) |
+| `LockerLog.door_closed_at`, `warned_door` | Local-only — không đồng bộ lên Firebase (trạng thái ESP32/timer chỉ có ý nghĩa tại chỗ) |
 | Xóa tài khoản | Firebase thắng → xóa SQLite + trả tủ liên quan |
 
 ---
@@ -554,6 +557,9 @@ IntelligentLocker.db
 | `IDLE_WARN_DAYS` | `cleanup_service.py` | `14` | Số ngày tủ không mở trước khi gửi mail cảnh báo (`cleanup_idle_warning`) |
 | `IDLE_REVOKE_DAYS` | `cleanup_service.py` | `16` | Số ngày tủ không mở trước khi tự thu hồi (`cleanup_idle_lockers`) |
 | `EXPIRY_WARN_DAYS` | `cleanup_service.py` | `2` | Số ngày trước `locker_expiry_date` để gửi mail cảnh báo (`cleanup_expiry_warning`) |
+| `DOOR_CHECK_INTERVAL` | *(door-warning timer)* | `1 phút` | Chu kỳ quét tủ mở quá lâu chưa đóng |
+| `DOOR_OPEN_WARN_MINUTES` | *(door-warning timer)* | `5 phút` | Thời gian mở tủ tối đa trước khi bị coi là quên đóng, gửi mail sinh viên |
+| `DOOR_MANAGER_ESCALATE_MINUTES` | *(door-warning timer)* | `15 phút` | Thời gian tính từ lúc gửi mail sinh viên mà vẫn chưa đóng → gửi thêm mail quản lý tủ |
 
 ---
 
@@ -619,6 +625,7 @@ py -3.11 sync_tool.py --push    # Chỉ SQLite → Firebase
 | 22/07 | **Fix lockout xác thực khuôn mặt không có tác dụng thật**: `lockout_until` được gán nhưng không bao giờ đọc lại → chuyển sang lưu ở `Session.face_lockout` (theo mssv, sống ngoài vòng đời `FaceWorker`) · dừng hẳn worker + tự quay về màn chọn hình thức xác thực khi bị khóa (`lockout_active` signal) thay vì chờ tại chỗ · fix `UnboundLocalError` do import `Session` cục bộ thừa làm shadow biến module-level |
 | 25/07 | **Web Admin — hàng loạt fix nhỏ đi kèm cảnh báo/thu hồi 4 giai đoạn**: `index.html` — fix `delete_time` lệch giờ UTC (`toISOString()`) và sai định dạng `vi-VN` không sort được → đồng nhất `toLocaleString('sv-SE')` (giờ VN, sortable); `_reasonMap` khớp đúng reason thật + bỏ field chết; login/dashboard đổi `browserSessionPersistence`; nhãn "Gửi Mail" phân biệt Kiosk/EmailJS · `sync_listener.py` — ghi `credential_email_log` khi Kiosk tự gửi mật khẩu (trước đây không ghi, cột "Gửi Mail" luôn trống); thêm listener `on_delete_log_added` đồng bộ realtime `locker_delete_logs` Firebase → SQLite · `sync_tool.py` — thêm `pull_delete_logs()` kéo bù lịch sử cũ lúc boot, `_RELEASE_REASONS` bổ sung `admin_force`/`auto_idle_locker`/`auto_expired` (trước chỉ có `student_release`) · **`face_worker.py`** — thêm `BOX_LOST_GRACE` (không reset liveness/confirm khi mất box chỉ 1 frame chập chờn) và `_pose_ok()` pose gate (bỏ qua embedding/match khi mặt nghiêng quá `POSE_MAX_OFFSET`, tránh cộng oan `fail_count`); thử rồi revert CLAHE + tỉ lệ std/mean trong `ai_utils.liveness()` (vấn đề thực tế không nằm ở ngưỡng liveness) |
 | 31/07 | **`sync_listener.py` — tự khôi phục sau mất mạng**: fix root cause (thread nền SSE chết âm thầm khi reconnect thất bại lúc mạng vẫn chưa có, không log/không tự phục hồi) · thêm `_watchdog_loop()` (daemon, 20s) tự đăng ký lại listener chết · sau khi khôi phục, tự chạy `sync_tool.py --sync` (subprocess) bù `users`/`lockers`/`locker_delete_logs` bị lỡ · thêm `_catchup_pending_credentials()` quét lại `pending_credentials` còn treo, gửi mail mật khẩu bị lỡ lúc offline (node này `sync_tool.py` không xử lý) · fix `UnicodeEncodeError` (cp1252) khi subprocess con in ký tự `✅/✗/⚠` trên Windows — ép `PYTHONIOENCODING=utf-8` |
+| 05/08 | Fix `sync_tool.py::pull_lockers()` — tủ trả/xóa trên Firebase (`status='empty'`, `last_open` đã xóa) nhưng SQLite local còn `last_open` cũ: logic cũ luôn lấy `max(local, firebase)`, mà chuỗi rỗng luôn "nhỏ hơn" nên giữ nhầm giá trị cũ, rồi `push()` kế tiếp đẩy ngược giá trị rác đó lên lại Firebase — giờ khi Firebase báo `empty` thì xóa thẳng `last_open`, không so sánh, khớp đúng logic `on_locker_change()` bên `sync_listener.py` · **Cảnh báo quên đóng tủ**: thêm `door_closed_at`/`warned_door` vào `LockerLog` (`app/database/database.py`), migrate tự động qua `ensure_schema()` |
 
 > Chi tiết từng thay đổi xem tại [`CHANGELOG.md`](./CHANGELOG.md)
 
